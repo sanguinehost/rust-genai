@@ -224,37 +224,45 @@ impl GeminiAdapter {
 		let mut reasoning_text_parts: Vec<String> = Vec::new();
 		let mut tool_calls_vec: Vec<ToolCall> = Vec::new();
 
-		// Safely access candidates and parts
-		if let Some(candidates_val) = body.get_mut("candidates") {
-			if let Some(candidates_array) = candidates_val.as_array_mut() {
-				if !candidates_array.is_empty() {
-					// Assuming the first candidate is the one we care about
-					if let Some(content_val) = candidates_array[0].get_mut("content") {
-						if let Some(parts_val) = content_val.get_mut("parts") {
-							if let Some(parts_array) = parts_val.as_array_mut() {
-								for part_value in parts_array.iter_mut() {
-									if let Some(fc_val) = part_value.get("functionCall").cloned() {
-										tool_calls_vec.push(ToolCall {
-											call_id: fc_val.x_get::<String>("name").unwrap_or_else(|_| String::new()),
-											fn_name: fc_val.x_get::<String>("name").unwrap_or_else(|_| String::new()),
-											fn_arguments: fc_val.x_get::<Value>("args").unwrap_or_else(|_| Value::Null),
-										});
-									} else if let Some(ec_val) = part_value.get("executableCode").cloned() {
-										if let Some(code_str) = ec_val.x_get::<String>("code").ok() {
-											reasoning_text_parts.push(code_str);
-										}
-									} else if let Some(tco_val) = part_value.get("toolCodeOutput").cloned() {
-										if let Some(output_str) = tco_val.x_get::<String>("output").ok() {
-											reasoning_text_parts.push(output_str);
-										}
-									} else if let Some(text_str) =
-										part_value.get("text").and_then(Value::as_str).map(String::from)
-									{
-										main_text_parts.push(text_str);
-									}
-								}
-							}
-						}
+		// Process candidates and parts
+		let candidates = body.get_mut("candidates")
+			.and_then(|val| val.as_array_mut())
+			.and_then(|arr| arr.first_mut());
+			
+		if let Some(first_candidate) = candidates {
+			// Extract parts from the first candidate
+			if let Some(parts_array) = first_candidate.get_mut("content")
+				.and_then(|content| content.get_mut("parts"))
+				.and_then(|parts| parts.as_array_mut()) 
+			{
+				// Process each part
+				for part_value in parts_array.iter_mut() {
+					// Handle function calls
+					if let Some(fc_val) = part_value.get("functionCall").cloned() {
+						tool_calls_vec.push(ToolCall {
+							call_id: fc_val.x_get::<String>("name").unwrap_or_default(),
+							fn_name: fc_val.x_get::<String>("name").unwrap_or_default(),
+							fn_arguments: fc_val.x_get::<Value>("args").unwrap_or(Value::Null),
+						});
+					} 
+					// Handle executable code
+					else if let Some(code_str) = part_value.get("executableCode")
+						.and_then(|ec| ec.x_get::<String>("code").ok()) 
+					{
+						reasoning_text_parts.push(code_str);
+					} 
+					// Handle tool code output
+					else if let Some(output_str) = part_value.get("toolCodeOutput")
+						.and_then(|tco| tco.x_get::<String>("output").ok()) 
+					{
+						reasoning_text_parts.push(output_str);
+					} 
+					// Handle plain text
+					else if let Some(text_str) = part_value.get("text")
+						.and_then(Value::as_str)
+						.map(String::from) 
+					{
+						main_text_parts.push(text_str);
 					}
 				}
 			}
