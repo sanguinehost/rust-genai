@@ -53,6 +53,10 @@ pub struct ChatOptions {
 	pub normalize_reasoning_content: Option<bool>,
 
 	pub reasoning_effort: Option<ReasoningEffort>,
+
+	// -- Provider-specific options
+	#[serde(default)] // Ensures Default::default() is used if missing during deserialization
+	pub gemini: Option<GeminiOptions>,
 }
 
 /// Chainable Setters
@@ -111,6 +115,20 @@ impl ChatOptions {
 
 	pub fn with_reasoning_effort(mut self, value: ReasoningEffort) -> Self {
 		self.reasoning_effort = Some(value);
+		self
+	}
+
+	/// Sets the thinking budget for Gemini models.
+	/// See: https://ai.google.dev/gemini-api/docs/thinking
+	pub fn with_gemini_thinking_budget(mut self, budget: u32) -> Self {
+		self.gemini.get_or_insert_with(Default::default).thinking_budget = Some(budget);
+		self
+	}
+
+	/// Enables or disables the built-in Code Execution tool for Gemini models.
+	/// See: https://ai.google.dev/gemini-api/docs/code-execution
+	pub fn with_gemini_enable_code_execution(mut self, enable: bool) -> Self {
+		self.gemini.get_or_insert_with(Default::default).enable_code_execution = Some(enable);
 		self
 	}
 
@@ -259,6 +277,32 @@ impl ChatOptionsSet<'_, '_> {
 			.or_else(|| self.client.and_then(|client| client.reasoning_effort.as_ref()))
 	}
 
+	pub fn gemini_thinking_budget(&self) -> Option<u32> {
+		self.chat
+			.as_ref()
+			.and_then(|chat_opts| chat_opts.gemini.as_ref())
+			.and_then(|gemini_opts| gemini_opts.thinking_budget)
+			.or_else(|| {
+				self.client
+					.as_ref()
+					.and_then(|client_opts| client_opts.gemini.as_ref())
+					.and_then(|gemini_opts| gemini_opts.thinking_budget)
+			})
+	}
+
+	pub fn gemini_enable_code_execution(&self) -> Option<bool> {
+		self.chat
+			.as_ref()
+			.and_then(|chat_opts| chat_opts.gemini.as_ref())
+			.and_then(|gemini_opts| gemini_opts.enable_code_execution)
+			.or_else(|| {
+				self.client
+					.as_ref()
+					.and_then(|client_opts| client_opts.gemini.as_ref())
+					.and_then(|gemini_opts| gemini_opts.enable_code_execution)
+			})
+	}
+
 	/// Returns true only if there is a ChatResponseFormat::JsonMode
 	#[deprecated(note = "Use .response_format()")]
 	#[allow(unused)]
@@ -272,3 +316,19 @@ impl ChatOptionsSet<'_, '_> {
 }
 
 // endregion: --- ChatOptionsSet
+
+// region:    --- GeminiOptions
+
+/// Gemini-specific chat options.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct GeminiOptions {
+	/// The budget for Gemini's internal "thinking" process, in tokens.
+	/// See: https://ai.google.dev/gemini-api/docs/thinking
+	pub thinking_budget: Option<u32>,
+
+	/// Enables the built-in Code Execution tool for Gemini.
+	/// See: https://ai.google.dev/gemini-api/docs/code-execution
+	pub enable_code_execution: Option<bool>,
+}
+
+// endregion: --- GeminiOptions

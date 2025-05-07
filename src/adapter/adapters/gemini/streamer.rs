@@ -2,8 +2,8 @@ use crate::adapter::adapters::support::{StreamerCapturedData, StreamerOptions};
 use crate::adapter::gemini::{GeminiAdapter, GeminiChatResponse};
 use crate::adapter::inter_stream::{InterStreamEnd, InterStreamEvent};
 use crate::chat::ChatOptionsSet;
-use crate::webc::WebStream;
 use crate::{Error, ModelIden, Result};
+use reqwest_eventsource::{Event, EventSource};
 use serde_json::Value;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -11,22 +11,26 @@ use std::task::{Context, Poll};
 use super::GeminiChatContent;
 
 pub struct GeminiStreamer {
-	inner: WebStream,
+	inner: EventSource,
 	options: StreamerOptions,
 
 	// -- Set by the poll_next
 	/// Flag to not poll the EventSource after a MessageStop event.
 	done: bool,
 	captured_data: StreamerCapturedData,
+	/// If a single Gemini event contains both reasoning and main content,
+	/// the main content is stored here to be emitted after the reasoning chunk.
+	pending_main_content: Option<String>,
 }
 
 impl GeminiStreamer {
-	pub fn new(inner: WebStream, model_iden: ModelIden, options_set: ChatOptionsSet<'_, '_>) -> Self {
+	pub fn new(inner: EventSource, model_iden: ModelIden, options_set: ChatOptionsSet<'_, '_>) -> Self {
 		Self {
 			inner,
 			done: false,
 			options: StreamerOptions::new(model_iden, options_set),
 			captured_data: Default::default(),
+			pending_main_content: None,
 		}
 	}
 }
@@ -40,92 +44,128 @@ impl futures::Stream for GeminiStreamer {
 			return Poll::Ready(None);
 		}
 
-		while let Poll::Ready(item) = Pin::new(&mut self.inner).poll_next(cx) {
-			match item {
-				Some(Ok(raw_message)) => {
-					// This is the message sent by the WebStream in PrettyJsonArray mode.
-					// - `[` document start
-					// - `{...}` block
-					// - `]` document end
-					let inter_event = match raw_message.as_str() {
-						"[" => InterStreamEvent::Start,
-						"]" => {
-							let inter_stream_end = InterStreamEnd {
-								captured_usage: self.captured_data.usage.take(),
-								captured_content: self.captured_data.content.take(),
-								captured_reasoning_content: self.captured_data.reasoning_content.take(),
-							};
+		// -- Emit pending main content first if it exists
+		if let Some(main_text) = self.pending_main_content.take() {
+			if self.options.capture_content {
+				match self.captured_data.content {
+					Some(ref mut c) => c.push_str(&main_text),
+					None => self.captured_data.content = Some(main_text.clone()),
+				}
+			}
+			return Poll::Ready(Some(Ok(InterStreamEvent::Chunk(main_text))));
+		}
 
-							InterStreamEvent::End(inter_stream_end)
+		// Loop to process multiple events if they are ready in the EventSource
+		loop {
+			match Pin::new(&mut self.inner).poll_next(cx) {
+				Poll::Ready(Some(Ok(event))) => {
+					match event {
+						Event::Open => {
+							// First event in the stream
+							return Poll::Ready(Some(Ok(InterStreamEvent::Start)));
 						}
-						block_string => {
-							// -- Parse the block to JSON
-							let json_block = match serde_json::from_str::<Value>(block_string).map_err(|serde_error| {
-								Error::StreamParse {
-									model_iden: self.options.model_iden.clone(),
-									serde_error,
-								}
-							}) {
+						Event::Message(message) => {
+							tracing::debug!("GeminiStreamer received SSE message.data: >>>{}<<<", message.data);
+							let json_block = match serde_json::from_str::<Value>(&message.data) {
 								Ok(json_block) => json_block,
-								Err(err) => {
-									tracing::error!("Gemini Adapter Stream Error: {}", err);
+								Err(serde_error) => {
+									let err = Error::StreamParse {
+										model_iden: self.options.model_iden.clone(),
+										serde_error,
+									};
+									tracing::error!("GeminiStreamer JSON parsing error: {}", err);
 									return Poll::Ready(Some(Err(err)));
 								}
 							};
 
-							// -- Extract the Gemini Response
-							let gemini_response =
-								match GeminiAdapter::body_to_gemini_chat_response(&self.options.model_iden, json_block)
-								{
-									Ok(gemini_response) => gemini_response,
-									Err(err) => {
-										tracing::error!("Gemini Adapter Stream Error: {}", err);
-										return Poll::Ready(Some(Err(err)));
+							match GeminiAdapter::body_to_gemini_chat_response(&self.options.model_iden, json_block) {
+								Ok(gemini_response) => {
+									let GeminiChatResponse { content, reasoning_content, usage } = gemini_response;
+
+									if self.options.capture_usage {
+										self.captured_data.usage = Some(usage);
 									}
-								};
 
-							let GeminiChatResponse { content, usage } = gemini_response;
+									let mut main_text_from_event: Option<String> = None;
+									if let Some(GeminiChatContent::Text(text)) = content {
+										main_text_from_event = Some(text);
+									} else if let Some(GeminiChatContent::ToolCall(_tool_call)) = content {
+										// TODO: Handle ToolCall if Gemini streams them.
+										tracing::warn!(
+											"GeminiStreamer received a ToolCall in stream (main content), currently not processed as a separate chunk."
+										);
+										// Note: If a tool call IS the main content, it won't be captured or emitted as a text chunk.
+									}
 
-							// -- Send Chunk event
-							if let Some(GeminiChatContent::Text(content)) = content {
-								// Capture content
-								if self.options.capture_content {
-									match self.captured_data.content {
-										Some(ref mut c) => c.push_str(&content),
-										None => self.captured_data.content = Some(content.clone()),
+									if let Some(GeminiChatContent::Text(reasoning_text)) = reasoning_content {
+										if self.options.capture_reasoning_content {
+											match self.captured_data.reasoning_content {
+												Some(ref mut c) => c.push_str(&reasoning_text),
+												None => self.captured_data.reasoning_content = Some(reasoning_text.clone()),
+											}
+										}
+										if let Some(main_text) = main_text_from_event {
+											// If there's also main text, store it to be emitted next.
+											self.pending_main_content = Some(main_text);
+										}
+										return Poll::Ready(Some(Ok(InterStreamEvent::ReasoningChunk(reasoning_text))));
+									} else if let Some(main_text) = main_text_from_event {
+										// No reasoning text, but there is main text.
+										if self.options.capture_content {
+											match self.captured_data.content {
+												Some(ref mut c) => c.push_str(&main_text),
+												None => self.captured_data.content = Some(main_text.clone()),
+											}
+										}
+										return Poll::Ready(Some(Ok(InterStreamEvent::Chunk(main_text))));
+									} else {
+										// Neither reasoning_text nor main_text. Could be just usage update or unhandled tool_call in reasoning_content.
+										// Or a ToolCall was the main content and was logged above.
+										// Continue polling for the next event.
+										continue;
 									}
 								}
-
-								// NOTE: Apparently in the Gemini API, all events have cumulative usage,
-								//       meaning each message seems to include the tokens for all previous streams.
-								//       Thus, we do not need to add it; we only need to replace captured_data.usage with the latest one.
-								//       See https://twitter.com/jeremychone/status/1813734565967802859 for potential additional information.
-								if self.options.capture_usage {
-									self.captured_data.usage = Some(usage);
+								Err(err) => {
+									tracing::error!(
+										"GeminiStreamer error processing Gemini response body: {}",
+										err
+									);
+									return Poll::Ready(Some(Err(err)));
 								}
-
-								InterStreamEvent::Chunk(content)
-							} else {
-								continue;
 							}
 						}
-					};
-
-					return Poll::Ready(Some(Ok(inter_event)));
+					}
 				}
-				Some(Err(err)) => {
-					tracing::error!("Gemini Adapter Stream Error: {}", err);
-					return Poll::Ready(Some(Err(Error::WebStream {
-						model_iden: self.options.model_iden.clone(),
-						cause: err.to_string(),
-					})));
+				Poll::Ready(Some(Err(event_source_err))) => {
+					if let reqwest_eventsource::Error::StreamEnded = event_source_err {
+						tracing::debug!("GeminiStreamer: EventSource reported StreamEnded (graceful close).");
+						self.done = true;
+						let inter_stream_end = InterStreamEnd {
+							captured_usage: self.captured_data.usage.take(),
+							captured_content: self.captured_data.content.take(),
+							captured_reasoning_content: self.captured_data.reasoning_content.take(),
+						};
+						return Poll::Ready(Some(Ok(InterStreamEvent::End(inter_stream_end))));
+					} else {
+						tracing::error!("GeminiStreamer EventSource error: {}", event_source_err);
+						self.done = true;
+						return Poll::Ready(Some(Err(Error::ReqwestEventSource(event_source_err.into()))));
+					}
 				}
-				None => {
+				Poll::Ready(None) => {
+					tracing::debug!("GeminiStreamer: EventSource returned None (stream closed).");
 					self.done = true;
-					return Poll::Ready(None);
+					let inter_stream_end = InterStreamEnd {
+						captured_usage: self.captured_data.usage.take(),
+						captured_content: self.captured_data.content.take(),
+						captured_reasoning_content: self.captured_data.reasoning_content.take(),
+					};
+					return Poll::Ready(Some(Ok(InterStreamEvent::End(inter_stream_end))));
+				}
+				Poll::Pending => {
+					return Poll::Pending;
 				}
 			}
 		}
-		Poll::Pending
 	}
 }
