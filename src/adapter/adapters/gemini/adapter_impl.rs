@@ -58,9 +58,6 @@ impl Adapter for GeminiAdapter {
 		chat_req: ChatRequest,
 		options_set: ChatOptionsSet<'_, '_>,
 	) -> Result<WebRequestData> {
-		// ADD THIS LOGGING CODE:
-		println!("[RUST-GENAI DEBUG] Received messages in to_web_request_data: {:?}", chat_req.messages);
-		// END OF ADDED LOGGING CODE
 
 		let ServiceTarget { endpoint, auth, model } = target;
 
@@ -156,15 +153,15 @@ impl Adapter for GeminiAdapter {
 		}
 
 		// ADD THIS LOGGING CODE:
-		match serde_json::to_string_pretty(&payload) {
-			Ok(json_string_pretty) => {
-				println!("[RUST-GENAI DEBUG] Gemini JSON Payload to be sent (adapter_impl.rs):\n{}", json_string_pretty);
-			}
-			Err(_) => {
-				// Fallback if pretty printing fails for some reason
-				println!("[RUST-GENAI DEBUG] Gemini JSON Payload (raw, adapter_impl.rs): {:?}", payload);
-			}
-		}
+		// match serde_json::to_string_pretty(&payload) {
+		// 	Ok(json_string_pretty) => {
+		// 		println!("[RUST-GENAI DEBUG] Gemini JSON Payload to be sent (adapter_impl.rs):\n{}", json_string_pretty);
+		// 	}
+		// 	Err(_) => {
+		// 		// Fallback if pretty printing fails for some reason
+		// 		println!("[RUST-GENAI DEBUG] Gemini JSON Payload (raw, adapter_impl.rs): {:?}", payload);
+		// 	}
+		// }
 		// END OF ADDED LOGGING CODE
 
 		Ok(WebRequestData { url, headers, payload })
