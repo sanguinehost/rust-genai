@@ -58,6 +58,10 @@ impl Adapter for GeminiAdapter {
 		chat_req: ChatRequest,
 		options_set: ChatOptionsSet<'_, '_>,
 	) -> Result<WebRequestData> {
+		// ADD THIS LOGGING CODE:
+		println!("[RUST-GENAI DEBUG] Received messages in to_web_request_data: {:?}", chat_req.messages);
+		// END OF ADDED LOGGING CODE
+
 		let ServiceTarget { endpoint, auth, model } = target;
 
 		// -- api_key
@@ -104,6 +108,16 @@ impl Adapter for GeminiAdapter {
 			payload.x_insert("tools", tools_payload)?;
 		}
 
+		// -- Tool Config
+		// Insert toolConfig if present in options. This is crucial for function calling.
+		if let Some(tool_config) = options_set.gemini_tool_config() { // Corrected: use gemini_tool_config()
+			// Assuming ToolConfig derives Serialize, convert to serde_json::Value
+			let tc_value = serde_json::to_value(tool_config)?; // Corrected: Use ? to propagate SerdeJson error
+			if !tc_value.is_null() { // Ensure we don't insert null if serialization results in it
+				payload.x_insert("toolConfig", tc_value)?;
+			}
+		}
+
 		// -- Response Format
 		if let Some(ChatResponseFormat::JsonSpec(st_json)) = options_set.response_format() {
 			// x_insert
@@ -140,6 +154,18 @@ impl Adapter for GeminiAdapter {
 		if let Some(thinking_budget) = options_set.gemini_thinking_budget() {
 			payload.x_insert("/generationConfig/thinkingConfig/thinkingBudget", thinking_budget)?;
 		}
+
+		// ADD THIS LOGGING CODE:
+		match serde_json::to_string_pretty(&payload) {
+			Ok(json_string_pretty) => {
+				println!("[RUST-GENAI DEBUG] Gemini JSON Payload to be sent (adapter_impl.rs):\n{}", json_string_pretty);
+			}
+			Err(_) => {
+				// Fallback if pretty printing fails for some reason
+				println!("[RUST-GENAI DEBUG] Gemini JSON Payload (raw, adapter_impl.rs): {:?}", payload);
+			}
+		}
+		// END OF ADDED LOGGING CODE
 
 		Ok(WebRequestData { url, headers, payload })
 	}

@@ -89,12 +89,9 @@ impl futures::Stream for GeminiStreamer {
 									let mut main_text_from_event: Option<String> = None;
 									if let Some(GeminiChatContent::Text(text)) = content {
 										main_text_from_event = Some(text);
-									} else if let Some(GeminiChatContent::ToolCall(_tool_call)) = content {
-										// TODO: Handle ToolCall if Gemini streams them.
-										tracing::warn!(
-											"GeminiStreamer received a ToolCall in stream (main content), currently not processed as a separate chunk."
-										);
-										// Note: If a tool call IS the main content, it won't be captured or emitted as a text chunk.
+									} else if let Some(GeminiChatContent::ToolCall(tool_call)) = content {
+										// Emit the ToolCall event directly
+										return Poll::Ready(Some(Ok(InterStreamEvent::ToolCall(tool_call))));
 									}
 
 									if let Some(GeminiChatContent::Text(reasoning_text)) = reasoning_content {

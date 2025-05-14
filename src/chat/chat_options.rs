@@ -6,6 +6,7 @@
 //! Note 2: Extracting it from the `ChatRequest` object allows for better reusability of each component.
 
 use crate::chat::chat_req_response_format::ChatResponseFormat;
+use crate::chat::tool::ToolConfig; // Added import for ToolConfig
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 
@@ -129,6 +130,12 @@ impl ChatOptions {
 	/// See: https://ai.google.dev/gemini-api/docs/code-execution
 	pub fn with_gemini_enable_code_execution(mut self, enable: bool) -> Self {
 		self.gemini.get_or_insert_with(Default::default).enable_code_execution = Some(enable);
+		self
+	}
+
+	/// Sets the tool_config for Gemini models.
+	pub fn with_gemini_tool_config(mut self, config: ToolConfig) -> Self {
+		self.gemini.get_or_insert_with(Default::default).tool_config = Some(config);
 		self
 	}
 
@@ -303,6 +310,19 @@ impl ChatOptionsSet<'_, '_> {
 			})
 	}
 
+	pub fn gemini_tool_config(&self) -> Option<&ToolConfig> {
+		self.chat
+			.as_ref()
+			.and_then(|chat_opts| chat_opts.gemini.as_ref())
+			.and_then(|gemini_opts| gemini_opts.tool_config.as_ref())
+			.or_else(|| {
+				self.client
+					.as_ref()
+					.and_then(|client_opts| client_opts.gemini.as_ref())
+					.and_then(|gemini_opts| gemini_opts.tool_config.as_ref())
+			})
+	}
+
 	/// Returns true only if there is a ChatResponseFormat::JsonMode
 	#[deprecated(note = "Use .response_format()")]
 	#[allow(unused)]
@@ -329,6 +349,9 @@ pub struct GeminiOptions {
 	/// Enables the built-in Code Execution tool for Gemini.
 	/// See: https://ai.google.dev/gemini-api/docs/code-execution
 	pub enable_code_execution: Option<bool>,
+
+	/// Tool configuration for Gemini, specifying how function calling should behave.
+	pub tool_config: Option<ToolConfig>,
 }
 
 // endregion: --- GeminiOptions

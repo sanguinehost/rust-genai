@@ -5,7 +5,7 @@
 //!
 //! NOTE: This might be removed at some point as it may not be needed, and we could go directly to the GenAI stream.
 
-use crate::chat::Usage;
+use crate::chat::{ToolCall, Usage};
 
 #[derive(Debug, Default)]
 pub struct InterStreamEnd {
@@ -25,5 +25,6 @@ pub enum InterStreamEvent {
 	Start,
 	Chunk(String),
 	ReasoningChunk(String),
+	ToolCall(ToolCall), // New variant for tool calls
 	End(InterStreamEnd),
 }
