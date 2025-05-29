@@ -84,31 +84,41 @@ impl futures::Stream for GeminiStreamer {
 									}
 								};
 
-							let GeminiChatResponse { content, usage } = gemini_response;
+							let GeminiChatResponse { mut contents, usage } = gemini_response;
 
-							// -- Send Chunk event
-							if let Some(GeminiChatContent::Text(content)) = content {
-								// Capture content
-								if self.options.capture_content {
-									match self.captured_data.content {
-										Some(ref mut c) => c.push_str(&content),
-										None => self.captured_data.content = Some(content.clone()),
-									}
-								}
+							// For streaming with InterStreamEvent::Chunk(String), we process only the text from the first candidate.
+							let first_content = contents.drain(..).next();
 
-								// NOTE: Apparently in the Gemini API, all events have cumulative usage,
-								//       meaning each message seems to include the tokens for all previous streams.
-								//       Thus, we do not need to add it; we only need to replace captured_data.usage with the latest one.
-								//       See https://twitter.com/jeremychone/status/1813734565967802859 for potential additional information.
-								if self.options.capture_usage {
-									self.captured_data.usage = Some(usage);
-								}
-
-								InterStreamEvent::Chunk(content)
-							} else {
-								continue;
+							// Capture usage regardless of content type for this chunk, as Gemini sends it cumulatively.
+							if self.options.capture_usage {
+								self.captured_data.usage = Some(usage);
 							}
-						}
+
+							match first_content {
+								Some(GeminiChatContent::Text(text_content)) => {
+									// Capture content text if option is set
+									if self.options.capture_content {
+										match self.captured_data.content {
+											Some(ref mut c) => c.push_str(&text_content),
+											None => self.captured_data.content = Some(text_content.clone()),
+										}
+									}
+									// This is the event to return for this branch of the outer match
+									InterStreamEvent::Chunk(text_content)
+								}
+								Some(GeminiChatContent::ToolCall(tool_call)) => {
+									tracing::warn!(
+										"GeminiStreamer received a ToolCall in a stream chunk: {:?}. This will not be emitted as InterStreamEvent::Chunk.",
+										tool_call
+									);
+									continue; // Go to next item from WebStream, effectively skipping this block for event emission
+								}
+								None => {
+									// No content from the first candidate, usage already updated. Skip emitting an empty chunk.
+									continue; // Go to next item from WebStream
+								}
+							}
+						} // End of block_string processing, result is the InterStreamEvent for this iteration
 					};
 
 					return Poll::Ready(Some(Ok(inter_event)));

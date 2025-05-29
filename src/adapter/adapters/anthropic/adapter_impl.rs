@@ -206,11 +206,22 @@ impl Adapter for AnthropicAdapter {
 		let content = if let Some(tool_calls) = tool_calls {
 			Some(MessageContent::from(tool_calls))
 		} else {
-			Some(MessageContent::from(text_content.join("\n")))
+			// Ensure text_content is not empty before creating MessageContent from it
+			if !text_content.is_empty() {
+				Some(MessageContent::from(text_content.join("\n")))
+			} else {
+				None // No text and no tool calls
+			}
+		};
+		
+		let response_contents = if let Some(c) = content {
+			vec![c]
+		} else {
+			Vec::new()
 		};
 
 		Ok(ChatResponse {
-			content,
+			contents: response_contents,
 			reasoning_content: None,
 			model_iden,
 			provider_model_iden,

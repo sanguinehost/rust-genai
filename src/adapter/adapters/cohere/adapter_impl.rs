@@ -139,7 +139,7 @@ impl Adapter for CohereAdapter {
 			.map(MessageContent::from);
 
 		Ok(ChatResponse {
-			content,
+			contents: content.map_or_else(Vec::new, |c| vec![c]),
 			reasoning_content: None,
 			model_iden,
 			provider_model_iden,

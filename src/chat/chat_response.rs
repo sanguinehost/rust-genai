@@ -10,8 +10,10 @@ use crate::chat::{ChatStream, MessageContent, ToolCall, Usage};
 /// The Chat response when performing a direct `Client::`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatResponse {
-	/// The eventual content of the chat response
-	pub content: Option<MessageContent>,
+	/// The eventual content(s) of the chat response.
+	/// If `candidateCount` was 1 or not specified, this will contain one item.
+	/// If `candidateCount > 1`, this will contain multiple content items.
+	pub contents: Vec<MessageContent>,
 
 	/// The eventual reasoning content,
 	pub reasoning_content: Option<String>,
@@ -33,27 +35,31 @@ pub struct ChatResponse {
 // Getters
 impl ChatResponse {
 	/// Returns the eventual content as `&str` if it is of type `MessageContent::Text`
-	/// Otherwise, returns None
-	pub fn content_text_as_str(&self) -> Option<&str> {
-		self.content.as_ref().and_then(MessageContent::text_as_str)
+	/// from the first candidate. Otherwise, returns None.
+	pub fn first_content_text_as_str(&self) -> Option<&str> {
+		self.contents.first().and_then(MessageContent::text_as_str)
 	}
 
 	/// Consumes the ChatResponse and returns the eventual String content of the `MessageContent::Text`
-	/// Otherwise, returns None
-	pub fn content_text_into_string(self) -> Option<String> {
-		self.content.and_then(MessageContent::text_into_string)
+	/// from the first candidate. Otherwise, returns None.
+	pub fn first_content_text_into_string(mut self) -> Option<String> {
+		self.contents.drain(..).next().and_then(MessageContent::text_into_string)
 	}
 
-	pub fn tool_calls(&self) -> Option<Vec<&ToolCall>> {
-		if let Some(MessageContent::ToolCalls(tool_calls)) = self.content.as_ref() {
+	/// Returns a Vec of ToolCall references from the first candidate if its content is ToolCalls.
+	/// Otherwise, returns None.
+	pub fn first_tool_calls(&self) -> Option<Vec<&ToolCall>> {
+		if let Some(MessageContent::ToolCalls(tool_calls)) = self.contents.first().as_ref() {
 			Some(tool_calls.iter().collect())
 		} else {
 			None
 		}
 	}
 
-	pub fn into_tool_calls(self) -> Option<Vec<ToolCall>> {
-		if let Some(MessageContent::ToolCalls(tool_calls)) = self.content {
+	/// Consumes the ChatResponse and returns the `Vec<ToolCall>` from the first candidate
+	/// if its content is ToolCalls. Otherwise, returns None.
+	pub fn first_into_tool_calls(mut self) -> Option<Vec<ToolCall>> {
+		if let Some(MessageContent::ToolCalls(tool_calls)) = self.contents.drain(..).next() {
 			Some(tool_calls)
 		} else {
 			None

@@ -26,12 +26,12 @@ pub fn seed_chat_req_simple() -> ChatRequest {
 	])
 }
 
-pub fn seed_chat_req_tool_simple() -> ChatRequest {
-	ChatRequest::new(vec![
+pub fn seed_chat_req_tool_simple() -> (Vec<ChatMessage>, Vec<Tool>) {
+	let messages = vec![
 		// -- Messages (deactivate to see the differences)
 		ChatMessage::user("What is the temperature in C, in Paris, France"),
-	])
-	.append_tool(Tool::new("get_weather").with_schema(json!({
+	];
+	let tools = vec![Tool::new("get_weather").with_schema(json!({
 		"type": "object",
 		"properties": {
 			"city": {
@@ -49,5 +49,6 @@ pub fn seed_chat_req_tool_simple() -> ChatRequest {
 			}
 		},
 		"required": ["city", "country", "unit"],
-	})))
+	}))];
+	(messages, tools)
 }

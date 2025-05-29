@@ -113,7 +113,7 @@ impl Adapter for OpenAIAdapter {
 		};
 
 		Ok(ChatResponse {
-			content,
+			contents: content.map_or_else(Vec::new, |c| vec![c]),
 			reasoning_content,
 			model_iden,
 			provider_model_iden,

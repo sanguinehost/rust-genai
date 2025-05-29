@@ -54,6 +54,24 @@ pub struct ChatOptions {
 	pub normalize_reasoning_content: Option<bool>,
 
 	pub reasoning_effort: Option<ReasoningEffort>,
+
+	// -- Gemini Specific Options (or other future provider specific advanced options)
+	/// Corresponds to `topK` in Gemini.
+	pub top_k: Option<i32>,
+	/// Corresponds to `seed` in Gemini.
+	pub seed: Option<i32>,
+	/// Corresponds to `presencePenalty` in Gemini.
+	pub presence_penalty: Option<f32>,
+	/// Corresponds to `frequencyPenalty` in Gemini.
+	pub frequency_penalty: Option<f32>,
+	/// Corresponds to `candidateCount` in Gemini.
+	pub candidate_count: Option<i32>,
+	/// Corresponds to `cachedContent` in Gemini (expects the cached content ID string).
+	pub cached_content_id: Option<String>,
+	/// Corresponds to `toolConfig.functionCallingConfig.mode` in Gemini (e.g., "AUTO", "ANY", "NONE").
+	pub function_calling_mode: Option<String>,
+	/// Corresponds to `toolConfig.functionCallingConfig.allowedFunctionNames` in Gemini.
+	pub allowed_function_names: Option<Vec<String>>,
 }
 
 /// Chainable Setters
@@ -112,6 +130,47 @@ impl ChatOptions {
 
 	pub fn with_reasoning_effort(mut self, value: ReasoningEffort) -> Self {
 		self.reasoning_effort = Some(value);
+		self
+	}
+
+	// -- Gemini Specific Option Setters (or other future provider specific advanced options)
+	pub fn with_top_k(mut self, value: i32) -> Self {
+		self.top_k = Some(value);
+		self
+	}
+
+	pub fn with_seed(mut self, value: i32) -> Self {
+		self.seed = Some(value);
+		self
+	}
+
+	pub fn with_presence_penalty(mut self, value: f32) -> Self {
+		self.presence_penalty = Some(value);
+		self
+	}
+
+	pub fn with_frequency_penalty(mut self, value: f32) -> Self {
+		self.frequency_penalty = Some(value);
+		self
+	}
+
+	pub fn with_candidate_count(mut self, value: i32) -> Self {
+		self.candidate_count = Some(value);
+		self
+	}
+
+	pub fn with_cached_content_id(mut self, value: String) -> Self {
+		self.cached_content_id = Some(value);
+		self
+	}
+
+	pub fn with_function_calling_mode(mut self, value: String) -> Self {
+		self.function_calling_mode = Some(value);
+		self
+	}
+
+	pub fn with_allowed_function_names(mut self, values: Vec<String>) -> Self {
+		self.allowed_function_names = Some(values);
 		self
 	}
 
@@ -311,6 +370,55 @@ impl ChatOptionsSet<'_, '_> {
 			None => None,
 			_ => Some(false),
 		}
+	}
+
+	// -- Gemini Specific Option Accessors (or other future provider specific advanced options)
+	pub fn top_k(&self) -> Option<i32> {
+		self.chat
+			.and_then(|chat| chat.top_k)
+			.or_else(|| self.client.and_then(|client| client.top_k))
+	}
+
+	pub fn seed(&self) -> Option<i32> {
+		self.chat
+			.and_then(|chat| chat.seed)
+			.or_else(|| self.client.and_then(|client| client.seed))
+	}
+
+	pub fn presence_penalty(&self) -> Option<f32> {
+		self.chat
+			.and_then(|chat| chat.presence_penalty)
+			.or_else(|| self.client.and_then(|client| client.presence_penalty))
+	}
+
+	pub fn frequency_penalty(&self) -> Option<f32> {
+		self.chat
+			.and_then(|chat| chat.frequency_penalty)
+			.or_else(|| self.client.and_then(|client| client.frequency_penalty))
+	}
+
+	pub fn candidate_count(&self) -> Option<i32> {
+		self.chat
+			.and_then(|chat| chat.candidate_count)
+			.or_else(|| self.client.and_then(|client| client.candidate_count))
+	}
+
+	pub fn cached_content_id(&self) -> Option<&String> {
+		self.chat
+			.and_then(|chat| chat.cached_content_id.as_ref())
+			.or_else(|| self.client.and_then(|client| client.cached_content_id.as_ref()))
+	}
+
+	pub fn function_calling_mode(&self) -> Option<&String> {
+		self.chat
+			.and_then(|chat| chat.function_calling_mode.as_ref())
+			.or_else(|| self.client.and_then(|client| client.function_calling_mode.as_ref()))
+	}
+
+	pub fn allowed_function_names(&self) -> Option<&Vec<String>> {
+		self.chat
+			.and_then(|chat| chat.allowed_function_names.as_ref())
+			.or_else(|| self.client.and_then(|client| client.allowed_function_names.as_ref()))
 	}
 }
 

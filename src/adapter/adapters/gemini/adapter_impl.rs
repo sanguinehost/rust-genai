@@ -18,7 +18,7 @@ pub struct GeminiAdapter;
 const MODELS: &[&str] = &[
 	"gemini-2.0-flash",
 	"gemini-2.0-flash-lite",
-	"gemini-2.5-flash-preview-04-17",
+	"gemini-2.5-flash-preview-05-20",
 	"gemini-2.5-pro-preview-05-06",
 	"gemini-1.5-pro",
 ];
@@ -186,6 +186,53 @@ impl Adapter for GeminiAdapter {
 			payload.x_insert("/generationConfig/topP", top_p)?;
 		}
 
+		// -- Add newly supported ChatOptions
+		if let Some(top_k) = options_set.top_k() {
+			payload.x_insert("/generationConfig/topK", top_k)?;
+		}
+		if let Some(seed) = options_set.seed() {
+			payload.x_insert("/generationConfig/seed", seed)?;
+		}
+		if let Some(presence_penalty) = options_set.presence_penalty() {
+			payload.x_insert("/generationConfig/presencePenalty", presence_penalty)?;
+		}
+		if let Some(frequency_penalty) = options_set.frequency_penalty() {
+			payload.x_insert("/generationConfig/frequencyPenalty", frequency_penalty)?;
+		}
+
+		// -- Candidate Count
+		if let Some(candidate_count) = options_set.candidate_count() {
+			payload.x_insert("/generationConfig/candidateCount", candidate_count)?;
+			// TODO: Adapt response parsing to handle multiple candidates if candidate_count > 1
+		}
+
+		// -- Cached Content
+		if let Some(cached_content_id) = options_set.cached_content_id() {
+			payload.x_insert("cachedContent", cached_content_id)?;
+		}
+
+		// -- Tool Config
+		let mut tool_config_payload = json!({});
+		let mut function_calling_config_payload = json!({});
+		let mut function_calling_config_added = false;
+
+		if let Some(mode) = options_set.function_calling_mode() {
+			function_calling_config_payload.x_insert("mode", mode)?;
+			function_calling_config_added = true;
+		}
+
+		if let Some(allowed_names) = options_set.allowed_function_names() {
+			if !allowed_names.is_empty() {
+				function_calling_config_payload.x_insert("allowedFunctionNames", allowed_names)?;
+				function_calling_config_added = true;
+			}
+		}
+
+		if function_calling_config_added {
+			tool_config_payload.x_insert("functionCallingConfig", function_calling_config_payload)?;
+			payload.x_insert("toolConfig", tool_config_payload)?;
+		}
+
 		// -- url
 		// NOTE: Somehow, Google decided to put the API key in the URL.
 		//       This should be considered an antipattern from a security point of view
@@ -209,16 +256,23 @@ impl Adapter for GeminiAdapter {
 		let provider_model_iden = model_iden.from_optional_name(provider_model_name);
 
 		let gemini_response = Self::body_to_gemini_chat_response(&model_iden.clone(), body)?;
-		let GeminiChatResponse { content, usage } = gemini_response;
+		let GeminiChatResponse { contents, usage } = gemini_response;
 
-		let content = match content {
-			Some(GeminiChatContent::Text(content)) => Some(MessageContent::from_text(content)),
-			Some(GeminiChatContent::ToolCall(tool_call)) => Some(MessageContent::from_tool_calls(vec![tool_call])),
-			None => None,
-		};
+		// Map Vec<GeminiChatContent> to Vec<MessageContent>
+		let response_contents: Vec<MessageContent> = contents
+			.into_iter()
+			.filter_map(|gemini_content| match gemini_content {
+				GeminiChatContent::Text(text) => Some(MessageContent::from_text(text)),
+				GeminiChatContent::ToolCall(tool_call) => Some(MessageContent::from_tool_calls(vec![tool_call])),
+			})
+			.collect();
+
+		// If the original request was for a single candidate (or default),
+		// and we got no content, the response_contents vec will be empty.
+		// Otherwise, it will contain one or more items.
 
 		Ok(ChatResponse {
-			content,
+			contents: response_contents,
 			reasoning_content: None,
 			model_iden,
 			provider_model_iden,
@@ -256,23 +310,43 @@ impl GeminiAdapter {
 			});
 		}
 
-		let mut response = body.x_take::<Value>("/candidates/0/content/parts/0")?;
-		let content = match response.x_take::<Value>("functionCall") {
-			Ok(f) => Some(GeminiChatContent::ToolCall(ToolCall {
-				call_id: f.x_get("name").unwrap_or("".to_string()), // TODO: Handle this, gemini does not return the call_id
-				fn_name: f.x_get("name").unwrap_or("".to_string()),
-				fn_arguments: f.x_get("args").unwrap_or(Value::Null),
-			})),
-			Err(_) => response
-				.x_take::<Value>("text")
-				.ok()
-				.and_then(|v| v.as_str().map(String::from))
-				.map(GeminiChatContent::Text),
-		};
+		// Take all candidates
+		let candidates = body.x_take::<Vec<Value>>("/candidates")?;
+		let mut gemini_contents: Vec<GeminiChatContent> = Vec::new();
 
+		for mut candidate_json in candidates {
+			// Process each candidate to extract its content part
+			// Assuming content is in /content/parts/0 as before for each candidate
+			match candidate_json.x_take::<Value>("/content/parts/0") {
+				Ok(mut response_part) => {
+					let content = match response_part.x_take::<Value>("functionCall") {
+						Ok(f) => Some(GeminiChatContent::ToolCall(ToolCall {
+							call_id: f.x_get("name").unwrap_or_else(|_| "".to_string()), 
+							fn_name: f.x_get("name").unwrap_or_else(|_| "".to_string()),
+							fn_arguments: f.x_get("args").unwrap_or(Value::Null),
+						})),
+						Err(_) => response_part
+							.x_take::<Value>("text")
+							.ok()
+							.and_then(|v| v.as_str().map(String::from))
+							.map(GeminiChatContent::Text),
+					};
+					if let Some(content_item) = content {
+						gemini_contents.push(content_item);
+					}
+				}
+				Err(e) => {
+					// Log or handle error if a candidate has no processable content part
+					// For now, we can skip this candidate or return an error
+					println!("Warning: Could not process content for a candidate: {:?}. Error: {}", candidate_json, e);
+				}
+			}
+		}
+
+		// Usage is typically overall for the request, not per candidate.
 		let usage = body.x_take::<Value>("usageMetadata").map(Self::into_usage).unwrap_or_default();
 
-		Ok(GeminiChatResponse { content, usage })
+		Ok(GeminiChatResponse { contents: gemini_contents, usage })
 	}
 
 	/// See gemini doc: https://ai.google.dev/api/generate-content#UsageMetadata
@@ -546,7 +620,7 @@ impl GeminiAdapter {
 // struct Gemini
 
 pub(super) struct GeminiChatResponse {
-	pub content: Option<GeminiChatContent>,
+	pub contents: Vec<GeminiChatContent>,
 	pub usage: Usage,
 }
 
