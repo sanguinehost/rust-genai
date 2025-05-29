@@ -106,9 +106,7 @@ impl Client {
 			headers = override_headers;
 		};
 
-		let reqwest_builder = self
-			.web_client()
-			.new_req_builder(&url, &headers, &payload);
+		let reqwest_builder = self.web_client().new_req_builder(&url, &headers, &payload);
 
 		let res = AdapterDispatcher::to_chat_stream(model, reqwest_builder, options_set)?;
 

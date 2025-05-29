@@ -60,7 +60,7 @@ where
 // Implement Clone for Box<dyn ModelMapperFn>
 impl Clone for Box<dyn ModelMapperFn> {
 	fn clone(&self) -> Self {
-	    self.clone_box()
+		self.clone_box()
 	}
 }
 

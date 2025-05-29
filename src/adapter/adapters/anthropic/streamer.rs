@@ -123,7 +123,7 @@ impl AnthropicStreamer {
 		if self.options.capture_usage {
 			let data = self.parse_message_data(message_data)?;
 			// TODO: Might want to exit early if usage is not found
-	
+
 			let (input_path, output_path) = if message_type == "message_start" {
 				("/message/usage/input_tokens", "/message/usage/output_tokens")
 			} else if message_type == "message_delta" {
@@ -135,7 +135,7 @@ impl AnthropicStreamer {
 				);
 				return Ok(()); // For now permissive
 			};
-	
+
 			// -- Capture/Add the eventual input_tokens
 			// NOTE: Permissive on this one; if an error occurs, treat it as nonexistent (for now)
 			if let Ok(input_tokens) = data.x_get::<i32>(input_path) {
@@ -147,7 +147,7 @@ impl AnthropicStreamer {
 					.get_or_insert(0);
 				*val += input_tokens;
 			}
-	
+
 			if let Ok(output_tokens) = data.x_get::<i32>(output_path) {
 				let val = self
 					.captured_data
@@ -158,10 +158,10 @@ impl AnthropicStreamer {
 				*val += output_tokens;
 			}
 		}
-	
+
 		Ok(())
 	}
-	
+
 	/// Simple wrapper for now, with the corresponding `map_err`.
 	/// Might have more logic later.
 	fn parse_message_data(&self, payload: &str) -> Result<Value> {

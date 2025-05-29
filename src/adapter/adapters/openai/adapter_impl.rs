@@ -179,10 +179,10 @@ impl OpenAIAdapter {
 		// For now, just for openai AdapterKind
 		let (reasoning_effort, model_name): (Option<ReasoningEffort>, &str) =
 			if matches!(adapter_kind, AdapterKind::OpenAI) {
-				let (reasoning_effort, model_name) = options_set
-					.reasoning_effort()
-					.cloned()
-					.map_or_else(|| ReasoningEffort::from_model_name(model_name), |v| (Some(v), model_name.as_ref()));
+				let (reasoning_effort, model_name) = options_set.reasoning_effort().cloned().map_or_else(
+					|| ReasoningEffort::from_model_name(model_name),
+					|v| (Some(v), model_name.as_ref()),
+				);
 
 				(reasoning_effort, model_name)
 			} else {
@@ -212,34 +212,34 @@ impl OpenAIAdapter {
 
 		// -- Add options
 		let response_format = options_set.response_format().map(|response_format| {
-		  match response_format {
-		      ChatResponseFormat::JsonMode => json!({"type": "json_object"}),
-		      ChatResponseFormat::JsonSpec(st_json) => {
-		          // "type": "json_schema", "json_schema": {...}
+			match response_format {
+				ChatResponseFormat::JsonMode => json!({"type": "json_object"}),
+				ChatResponseFormat::JsonSpec(st_json) => {
+					// "type": "json_schema", "json_schema": {...}
 
-		          let mut schema = st_json.schema.clone();
-		          schema.x_walk(|parent_map, name| {
-		              if name == "type" {
-		                  let typ = parent_map.get("type").and_then(|v| v.as_str()).unwrap_or("");
-		                  if typ == "object" {
-		                      parent_map.insert("additionalProperties".to_string(), false.into());
-		                  }
-		              }
-		              true
-		          });
+					let mut schema = st_json.schema.clone();
+					schema.x_walk(|parent_map, name| {
+						if name == "type" {
+							let typ = parent_map.get("type").and_then(|v| v.as_str()).unwrap_or("");
+							if typ == "object" {
+								parent_map.insert("additionalProperties".to_string(), false.into());
+							}
+						}
+						true
+					});
 
-		          json!({
-		              "type": "json_schema",
-		              "json_schema": {
-		                  "name": st_json.name.clone(),
-		                  "strict": true,
-		                  // TODO: add description
-		                  "schema": schema,
-		              }
-		          })
-		      }
-		  }
-});
+					json!({
+						"type": "json_schema",
+						"json_schema": {
+							"name": st_json.name.clone(),
+							"strict": true,
+							// TODO: add description
+							"schema": schema,
+						}
+					})
+				}
+			}
+		});
 
 		if let Some(response_format) = response_format {
 			payload["response_format"] = response_format;

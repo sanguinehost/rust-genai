@@ -1,13 +1,13 @@
 use crate::get_option_value;
 use crate::support::data::{IMAGE_URL_JPG_DUCK, get_b64_duck};
 use crate::support::{
-	Check, Result, StreamExtract, assert_contains, contains_checks, extract_stream_end, get_big_content,
-	seed_chat_req_simple, seed_chat_req_tool_simple, validate_checks, common_client_from_model,
+	Check, Result, StreamExtract, assert_contains, common_client_from_model, contains_checks, extract_stream_end,
+	get_big_content, seed_chat_req_simple, seed_chat_req_tool_simple, validate_checks,
 };
 use genai::adapter::AdapterKind;
 use genai::chat::{
-	CacheControl, ChatMessage, ChatOptions, ChatRequest, ChatResponseFormat, ContentPart, ImageSource, JsonSpec, Tool,
-	ToolResponse, ChatRole, MessageContent,
+	CacheControl, ChatMessage, ChatOptions, ChatRequest, ChatResponseFormat, ChatRole, ContentPart, ImageSource,
+	JsonSpec, MessageContent, Tool, ToolResponse,
 };
 use genai::resolver::{AuthData, AuthResolver, AuthResolverFn, IntoAuthResolverFn};
 use genai::{Client, ClientConfig, ModelIden};
@@ -718,10 +718,7 @@ pub async fn common_test_resolver_auth_ok(model: &str, auth_data: AuthData) -> R
 	let response = client.exec_chat(model, chat_req, None).await?;
 
 	// -- Check
-	assert!(
-		!response.contents.is_empty(),
-		"Content should not be empty"
-	);
+	assert!(!response.contents.is_empty(), "Content should not be empty");
 	let usage = response.usage;
 	let total_tokens = get_option_value!(usage.total_tokens);
 	assert!(total_tokens > 0, "total_tokens should be > 0");

@@ -59,8 +59,8 @@ impl ChatMessage {
 impl ChatMessage {
 	#[must_use]
 	pub fn with_options(mut self, options: impl Into<MessageOptions>) -> Self {
-	    self.options = Some(options.into());
-	    self
+		self.options = Some(options.into());
+		self
 	}
 }
 // region:    --- MessageOptions

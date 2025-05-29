@@ -124,7 +124,7 @@ where
 // Implement Clone for Box<dyn AuthResolverFn>
 impl Clone for Box<dyn AuthResolverFn> {
 	fn clone(&self) -> Self {
-	    self.clone_box()
+		self.clone_box()
 	}
 }
 

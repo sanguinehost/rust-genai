@@ -13,9 +13,9 @@ pub struct WebClient {
 impl Default for WebClient {
 	fn default() -> Self {
 		Self {
-		    reqwest_client: reqwest::Client::new(),
+			reqwest_client: reqwest::Client::new(),
 		}
-}
+	}
 }
 
 // region:    --- Constructors
@@ -23,7 +23,7 @@ impl Default for WebClient {
 impl WebClient {
 	#[must_use]
 	pub const fn from_reqwest_client(reqwest_client: reqwest::Client) -> Self {
-	    Self { reqwest_client }
+		Self { reqwest_client }
 	}
 }
 

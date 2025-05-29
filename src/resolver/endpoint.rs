@@ -18,9 +18,9 @@ enum EndpointInner {
 impl Endpoint {
 	#[must_use]
 	pub const fn from_static(url: &'static str) -> Self {
-	    Self {
-	        inner: EndpointInner::Static(url),
-	    }
+		Self {
+			inner: EndpointInner::Static(url),
+		}
 	}
 
 	pub fn from_owned(url: impl Into<Arc<str>>) -> Self {

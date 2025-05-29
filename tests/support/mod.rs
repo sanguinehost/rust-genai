@@ -32,27 +32,34 @@ pub const MODEL_ANTHROPIC_CLAUDE_3_HAIKU: &str = "anthropic/claude-3-haiku-20240
 
 // region:    --- Common Clients
 use genai::Client;
-use genai::adapter::AdapterKind;
-use genai::Result as GenaiResult; // genai's Result, aliased to avoid conflict
+use genai::Result as GenaiResult;
+use genai::adapter::AdapterKind; // genai's Result, aliased to avoid conflict
 
 pub fn common_client_gemini() -> Client {
-    // Client::builder()
-    //     .with_adapter_kind(AdapterKind::Gemini) // This method does not exist on ClientBuilder
-    //     .try_build()
-    // For now, assume default builder is sufficient or custom config will be added if needed by other tests.
-    // Adapters are typically resolved from the model string.
-    Client::builder().build()
+	// Client::builder()
+	//     .with_adapter_kind(AdapterKind::Gemini) // This method does not exist on ClientBuilder
+	//     .try_build()
+	// For now, assume default builder is sufficient or custom config will be added if needed by other tests.
+	// Adapters are typically resolved from the model string.
+	Client::builder().build()
 }
 
 pub fn common_client_from_model(model_name_str: &str) -> Client {
 	// Very basic dispatch for now, can be expanded.
 	// This assumes model_name_str is like "adapter/model_name", e.g., "gemini/gemini-2.5-flash"
-	if model_name_str.starts_with("gemini/") || model_name_str.starts_with("gemini-2.5") || model_name_str.starts_with("gemini-1.5") {
+	if model_name_str.starts_with("gemini/")
+		|| model_name_str.starts_with("gemini-2.5")
+		|| model_name_str.starts_with("gemini-1.5")
+	{
 		common_client_gemini()
 	} else if model_name_str.starts_with("anthropic/") {
 		// Assuming a similar helper for anthropic, or direct build
 		Client::builder().build() // Placeholder, adapt if anthropic needs specific setup
-	} else if model_name_str.starts_with("openai/") || model_name_str.starts_with("gpt-") || model_name_str.starts_with("cohere/") || model_name_str.starts_with("command-") {
+	} else if model_name_str.starts_with("openai/")
+		|| model_name_str.starts_with("gpt-")
+		|| model_name_str.starts_with("cohere/")
+		|| model_name_str.starts_with("command-")
+	{
 		Client::builder().build() // Placeholder
 	} else {
 		// Default or error

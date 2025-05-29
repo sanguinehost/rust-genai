@@ -75,7 +75,7 @@ where
 // Implement Clone for Box<dyn ServiceTargetResolverFn>
 impl Clone for Box<dyn ServiceTargetResolverFn> {
 	fn clone(&self) -> Self {
-	    self.clone_box()
+		self.clone_box()
 	}
 }
 

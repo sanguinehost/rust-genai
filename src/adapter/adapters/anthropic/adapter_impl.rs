@@ -211,7 +211,7 @@ impl Adapter for AnthropicAdapter {
 				Some(MessageContent::from(text_content.join("\n")))
 			}
 		});
-		
+
 		let response_contents = content.map_or_else(Vec::new, |c| vec![c]);
 
 		Ok(ChatResponse {
@@ -332,9 +332,9 @@ impl AnthropicAdapter {
 									},
 								})
 								.collect::<Vec<Value>>();
-	
+
 							let values = apply_cache_control_to_parts(is_cache_control, values);
-	
+
 							json!(values)
 						}
 						// Use `match` instead of `if let`. This will allow to future-proof this
@@ -399,7 +399,7 @@ impl AnthropicAdapter {
 				}
 			}
 		}
-	
+
 		// -- Create the Anthropic system
 		// NOTE: Anthropic does not have a "role": "system", just a single optional system property
 		let system = if systems.is_empty() {
@@ -436,7 +436,7 @@ impl AnthropicAdapter {
 			};
 			Some(system)
 		};
-	
+
 		// -- Process the tools
 		let tools = chat_req.tools.map(|tools| {
 			tools
@@ -449,7 +449,7 @@ impl AnthropicAdapter {
 						"name": tool.name,
 						"input_schema": tool.schema,
 					});
-	
+
 					if let Some(description) = tool.description {
 						// TODO: need to handle error
 						let _ = tool_value.x_insert("description", description);
@@ -458,7 +458,7 @@ impl AnthropicAdapter {
 				})
 				.collect::<Vec<Value>>()
 		});
-	
+
 		AnthropicRequestParts {
 			system,
 			messages,
@@ -466,7 +466,7 @@ impl AnthropicAdapter {
 		}
 	}
 }
-	
+
 /// Apply the cache control logic to a text content
 fn apply_cache_control_to_text(is_cache_control: bool, content: &str) -> Value {
 	if is_cache_control {
@@ -478,7 +478,7 @@ fn apply_cache_control_to_text(is_cache_control: bool, content: &str) -> Value {
 		json!(content)
 	}
 }
-	
+
 /// Apply the cache control logic to a text content
 fn apply_cache_control_to_parts(is_cache_control: bool, parts: Vec<Value>) -> Vec<Value> {
 	let mut parts = parts;

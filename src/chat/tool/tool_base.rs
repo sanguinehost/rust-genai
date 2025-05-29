@@ -52,14 +52,14 @@ impl Tool {
 impl Tool {
 	#[must_use]
 	pub fn with_description(mut self, description: impl Into<String>) -> Self {
-	    self.description = Some(description.into());
-	    self
+		self.description = Some(description.into());
+		self
 	}
 
 	#[must_use]
 	pub fn with_schema(mut self, parameters: Value) -> Self {
-	    self.schema = Some(parameters);
-	    self
+		self.schema = Some(parameters);
+		self
 	}
 }
 

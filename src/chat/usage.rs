@@ -71,7 +71,7 @@ impl PromptTokensDetails {
 	/// Checks if all fields are `None`.
 	#[must_use]
 	pub const fn is_empty(&self) -> bool {
-	    self.cache_creation_tokens.is_none() && self.cached_tokens.is_none() && self.audio_tokens.is_none()
+		self.cache_creation_tokens.is_none() && self.cached_tokens.is_none() && self.audio_tokens.is_none()
 	}
 }
 
@@ -93,9 +93,9 @@ impl CompletionTokensDetails {
 	/// Checks if all fields are `None`.
 	#[must_use]
 	pub const fn is_empty(&self) -> bool {
-	    self.accepted_prediction_tokens.is_none()
-	        && self.rejected_prediction_tokens.is_none()
-	        && self.reasoning_tokens.is_none()
-	        && self.audio_tokens.is_none()
+		self.accepted_prediction_tokens.is_none()
+			&& self.rejected_prediction_tokens.is_none()
+			&& self.reasoning_tokens.is_none()
+			&& self.audio_tokens.is_none()
 	}
 }

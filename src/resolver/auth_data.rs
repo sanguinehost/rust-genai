@@ -36,7 +36,7 @@ impl AuthData {
 	/// Create a new `AuthData` from multiple values.
 	#[must_use]
 	pub const fn from_multi(data: HashMap<String, String>) -> Self {
-	    Self::MultiKeys(data)
+		Self::MultiKeys(data)
 	}
 }
 

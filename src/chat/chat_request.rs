@@ -63,33 +63,33 @@ impl ChatRequest {
 	/// Set the system content of the request.
 	#[must_use]
 	pub fn with_system(mut self, system: impl Into<String>) -> Self {
-	    self.system = Some(system.into());
-	    self
+		self.system = Some(system.into());
+		self
 	}
 
 	/// Append a message to the request.
 	#[must_use]
 	pub fn append_message(mut self, msg: impl Into<ChatMessage>) -> Self {
-	    self.messages.push(msg.into());
-	    self
+		self.messages.push(msg.into());
+		self
 	}
 
 	#[must_use]
 	pub fn append_messages(mut self, messages: Vec<ChatMessage>) -> Self {
-	    self.messages.extend(messages);
-	    self
+		self.messages.extend(messages);
+		self
 	}
 
 	#[must_use]
 	pub fn with_tools(mut self, tools: Vec<Tool>) -> Self {
-	    self.tools = Some(tools);
-	    self
+		self.tools = Some(tools);
+		self
 	}
 
 	#[must_use]
 	pub fn append_tool(mut self, tool: impl Into<Tool>) -> Self {
-	    self.tools.get_or_insert_with(Vec::new).push(tool.into());
-	    self
+		self.tools.get_or_insert_with(Vec::new).push(tool.into());
+		self
 	}
 }
 

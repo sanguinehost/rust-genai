@@ -2,8 +2,8 @@ mod support;
 
 use crate::support::{Check, common_tests};
 use genai::adapter::AdapterKind;
+use genai::chat::{ChatMessage, ChatOptions, ChatRequest, Tool};
 use genai::resolver::AuthData;
-use genai::chat::{ChatOptions, ChatMessage, ChatRequest, Tool};
 use serde_json::json;
 type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>; // For tests.
 
@@ -146,9 +146,7 @@ async fn test_chat_seed_ok() -> Result<()> {
 #[tokio::test]
 async fn test_chat_penalties_ok() -> Result<()> {
 	let client = support::common_client_gemini();
-	let chat_options = ChatOptions::default()
-		.with_presence_penalty(0.5)
-		.with_frequency_penalty(0.5);
+	let chat_options = ChatOptions::default().with_presence_penalty(0.5).with_frequency_penalty(0.5);
 	let messages = vec![ChatMessage::user("Write a paragraph about recurring themes in storytelling.")];
 	let chat_req = ChatRequest::new(messages);
 
@@ -164,14 +162,25 @@ async fn test_chat_candidate_count_ok() -> Result<()> {
 	let client = support::common_client_gemini();
 	let expected_candidates: usize = 2;
 	let chat_options = ChatOptions::default().with_candidate_count(expected_candidates.try_into()?);
-	let messages = vec![ChatMessage::user("Why is the sky blue? Give two slightly different explanations.")]; // Prompt to encourage different responses
+	let messages = vec![ChatMessage::user(
+		"Why is the sky blue? Give two slightly different explanations.",
+	)]; // Prompt to encourage different responses
 	let chat_req = ChatRequest::new(messages);
 
 	let res = client.exec_chat(MODEL, chat_req, Some(&chat_options)).await?;
 	assert!(!res.contents.is_empty(), "Expected content in response");
-	assert_eq!(res.contents.len(), expected_candidates, "Expected {} candidates, got {}", expected_candidates, res.contents.len());
+	assert_eq!(
+		res.contents.len(),
+		expected_candidates,
+		"Expected {} candidates, got {}",
+		expected_candidates,
+		res.contents.len()
+	);
 
-	println!("test_chat_candidate_count_ok - Received {} candidates:", res.contents.len());
+	println!(
+		"test_chat_candidate_count_ok - Received {} candidates:",
+		res.contents.len()
+	);
 	for (i, content) in res.contents.iter().enumerate() {
 		println!("  Candidate {i}: {content:?}");
 		match content {
@@ -187,50 +196,54 @@ async fn test_chat_candidate_count_ok() -> Result<()> {
 #[tokio::test]
 async fn test_chat_cached_content_id_ok() -> Result<()> {
 	let client = support::common_client_gemini();
-	let chat_options = ChatOptions::default().with_cached_content_id("cachedContents/some-test-id-that-does-not-exist-12345".to_string());
+	let chat_options = ChatOptions::default()
+		.with_cached_content_id("cachedContents/some-test-id-that-does-not-exist-12345".to_string());
 	let messages = vec![ChatMessage::user("What is 2 + 2?")];
 	let chat_req = ChatRequest::new(messages);
 
 	let res = client.exec_chat(MODEL, chat_req, Some(&chat_options)).await;
-	
+
 	if let Err(e) = &res {
 		println!("test_chat_cached_content_id_ok - Received error (potentially expected for invalid ID): {e}");
 	} else if let Ok(response_ok) = res {
 		assert!(!response_ok.contents.is_empty());
-		println!("test_chat_cached_content_id_ok - Response Contents: {:?}", response_ok.contents);
+		println!(
+			"test_chat_cached_content_id_ok - Response Contents: {:?}",
+			response_ok.contents
+		);
 	}
 	Ok(())
 }
 
 fn helper_dummy_tool_weather() -> Tool {
-    Tool::new("get_current_weather".to_string())
-        .with_description("Get the current weather in a given location".to_string())
-        .with_schema(json!({
-            "type": "object",
-            "properties": {
-                "location": {
-                    "type": "string",
-                    "description": "The city and state, e.g. San Francisco, CA"
-                },
-                "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]}
-            },
-            "required": ["location"]
-        }))
+	Tool::new("get_current_weather".to_string())
+		.with_description("Get the current weather in a given location".to_string())
+		.with_schema(json!({
+			"type": "object",
+			"properties": {
+				"location": {
+					"type": "string",
+					"description": "The city and state, e.g. San Francisco, CA"
+				},
+				"unit": {"type": "string", "enum": ["celsius", "fahrenheit"]}
+			},
+			"required": ["location"]
+		}))
 }
 
 fn helper_dummy_tool_recipe() -> Tool {
-    Tool::new("find_recipe".to_string())
-        .with_description("Find a recipe for a given dish".to_string())
-        .with_schema(json!({
-            "type": "object",
-            "properties": {
-                "dish": {
-                    "type": "string",
-                    "description": "The dish to search for, e.g. pasta carbonara"
-                }
-            },
-            "required": ["dish"]
-        }))
+	Tool::new("find_recipe".to_string())
+		.with_description("Find a recipe for a given dish".to_string())
+		.with_schema(json!({
+			"type": "object",
+			"properties": {
+				"dish": {
+					"type": "string",
+					"description": "The dish to search for, e.g. pasta carbonara"
+				}
+			},
+			"required": ["dish"]
+		}))
 }
 
 #[tokio::test]
@@ -238,14 +251,23 @@ async fn test_chat_function_calling_mode_none_ok() -> Result<()> {
 	let client = support::common_client_gemini();
 	let tools = vec![helper_dummy_tool_weather()];
 	let chat_options = ChatOptions::default().with_function_calling_mode("NONE".to_string());
-	
+
 	let messages = vec![ChatMessage::user("What's the weather like in London?")];
 	let chat_req = ChatRequest::new(messages).with_tools(tools);
 
 	let res = client.exec_chat(MODEL, chat_req, Some(&chat_options)).await?;
 	assert!(!res.contents.is_empty(), "Expected text content in response");
-	assert!(!matches!(res.contents.first().as_ref().unwrap(), genai::chat::MessageContent::ToolCalls(_)), "Expected no tool calls when mode is NONE");
-	println!("test_chat_function_calling_mode_none_ok - Response Contents: {:?}", res.contents);
+	assert!(
+		!matches!(
+			res.contents.first().as_ref().unwrap(),
+			genai::chat::MessageContent::ToolCalls(_)
+		),
+		"Expected no tool calls when mode is NONE"
+	);
+	println!(
+		"test_chat_function_calling_mode_none_ok - Response Contents: {:?}",
+		res.contents
+	);
 	Ok(())
 }
 
@@ -254,13 +276,19 @@ async fn test_chat_function_calling_mode_auto_with_tool_ok() -> Result<()> {
 	let client = support::common_client_gemini();
 	let tools = vec![helper_dummy_tool_weather()];
 	let chat_options = ChatOptions::default().with_function_calling_mode("AUTO".to_string());
-	
+
 	let messages = vec![ChatMessage::user("What's the weather like in London?")];
 	let chat_req = ChatRequest::new(messages).with_tools(tools);
 
 	let res = client.exec_chat(MODEL, chat_req, Some(&chat_options)).await?;
 	assert!(!res.contents.is_empty(), "Expected content in response");
-	assert!(matches!(res.contents.first().as_ref().unwrap(), genai::chat::MessageContent::ToolCalls(_)), "Expected tool call when mode is AUTO and prompt triggers tool");
+	assert!(
+		matches!(
+			res.contents.first().as_ref().unwrap(),
+			genai::chat::MessageContent::ToolCalls(_)
+		),
+		"Expected tool call when mode is AUTO and prompt triggers tool"
+	);
 	if let Some(genai::chat::MessageContent::ToolCalls(tool_calls)) = res.contents.first() {
 		println!("test_chat_function_calling_mode_auto_with_tool_ok - Tool calls: {tool_calls:?}");
 	} else {
@@ -268,7 +296,6 @@ async fn test_chat_function_calling_mode_auto_with_tool_ok() -> Result<()> {
 	}
 	Ok(())
 }
-
 
 #[tokio::test]
 async fn test_chat_allowed_function_names_ok() -> Result<()> {
@@ -285,10 +312,16 @@ async fn test_chat_allowed_function_names_ok() -> Result<()> {
 	assert!(!res.contents.is_empty(), "Expected content in response");
 	if let Some(genai::chat::MessageContent::ToolCalls(tool_calls)) = res.contents.first() {
 		assert_eq!(tool_calls.len(), 1, "Expected exactly one tool call");
-		assert_eq!(tool_calls[0].fn_name, "get_current_weather", "Expected 'get_current_weather' to be called");
+		assert_eq!(
+			tool_calls[0].fn_name, "get_current_weather",
+			"Expected 'get_current_weather' to be called"
+		);
 		println!("test_chat_allowed_function_names_ok (weather) - Tool calls: {tool_calls:?}");
 	} else {
-		panic!("Expected a tool call for 'get_current_weather', got: {:?}", res.contents);
+		panic!(
+			"Expected a tool call for 'get_current_weather', got: {:?}",
+			res.contents
+		);
 	}
 
 	// Test the disallowed tool
@@ -299,21 +332,38 @@ async fn test_chat_allowed_function_names_ok() -> Result<()> {
 	let messages_recipe = vec![ChatMessage::user("Find me a recipe for apple pie.")];
 	// Ensure `tools` is available; it was cloned for the first request, so original `tools` is still here.
 	let chat_req_recipe = ChatRequest::new(messages_recipe).with_tools(tools.clone());
-	
-	let res_recipe = client.exec_chat(MODEL, chat_req_recipe, Some(&chat_options_recipe_disallowed)).await?;
-	assert!(!res_recipe.contents.is_empty(), "Expected content in response for recipe prompt");
+
+	let res_recipe = client
+		.exec_chat(MODEL, chat_req_recipe, Some(&chat_options_recipe_disallowed))
+		.await?;
+	assert!(
+		!res_recipe.contents.is_empty(),
+		"Expected content in response for recipe prompt"
+	);
 
 	if let Some(genai::chat::MessageContent::ToolCalls(tool_calls)) = res_recipe.contents.first() {
 		println!("test_chat_allowed_function_names_ok (recipe) - Tool call(s) made: {tool_calls:?}");
-		assert!(!tool_calls.is_empty(), "If ToolCalls variant, it should not be empty here based on previous runs.");
+		assert!(
+			!tool_calls.is_empty(),
+			"If ToolCalls variant, it should not be empty here based on previous runs."
+		);
 		for tool_call in tool_calls {
-			assert_eq!(tool_call.fn_name, "get_current_weather", 
-				"If any tool is called with allowed_functions_names restricting to weather, it must be get_current_weather. Called: {}", tool_call.fn_name);
+			assert_eq!(
+				tool_call.fn_name, "get_current_weather",
+				"If any tool is called with allowed_functions_names restricting to weather, it must be get_current_weather. Called: {}",
+				tool_call.fn_name
+			);
 		}
 	} else {
 		// This case is also acceptable: the model chose not to call any tool.
 		println!("test_chat_allowed_function_names_ok (recipe) - No tool call made (text response): {res_recipe:?}");
-		assert!(matches!(res_recipe.contents.first().as_ref().unwrap(), genai::chat::MessageContent::Text(_)), "Expected a text response if no tool call was made.");
+		assert!(
+			matches!(
+				res_recipe.contents.first().as_ref().unwrap(),
+				genai::chat::MessageContent::Text(_)
+			),
+			"Expected a text response if no tool call was made."
+		);
 	}
 
 	Ok(())

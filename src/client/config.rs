@@ -82,12 +82,15 @@ impl ClientConfig {
 	pub async fn resolve_service_target(&self, model: ModelIden) -> Result<ServiceTarget> {
 		// -- Resolve the Model first
 		let model = self
-		    .model_mapper()
-		    .map_or_else(|| Ok(model.clone()), |model_mapper| model_mapper.map_model(model.clone()))
-		    .map_err(|resolver_error| crate::Error::Resolver {
-		     model_iden: model.clone(),
-		     resolver_error,
-		    })?;
+			.model_mapper()
+			.map_or_else(
+				|| Ok(model.clone()),
+				|model_mapper| model_mapper.map_model(model.clone()),
+			)
+			.map_err(|resolver_error| crate::Error::Resolver {
+				model_iden: model.clone(),
+				resolver_error,
+			})?;
 
 		// -- Get the auth
 		let auth = if let Some(auth) = self.auth_resolver() {

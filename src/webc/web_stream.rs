@@ -170,10 +170,7 @@ struct BuffResponse {
 /// IMPORTANT: Right now, it assumes each `buff_string` will contain the full main JSON object
 ///            for each array item (which seems to be the case with Gemini).
 ///            This probably needs to be made more robust later.
-fn new_with_pretty_json_array(
-	buff_string: &str,
-	_partial_message: &mut Option<String>,
-) -> BuffResponse {
+fn new_with_pretty_json_array(buff_string: &str, _partial_message: &mut Option<String>) -> BuffResponse {
 	let buff_str = buff_string.trim();
 
 	let mut messages: Vec<String> = Vec::new();

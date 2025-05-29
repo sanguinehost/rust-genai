@@ -35,7 +35,7 @@ impl MessageContent {
 	/// Create a new `MessageContent` with the `ToolCalls` variant
 	#[must_use]
 	pub const fn from_tool_calls(tool_calls: Vec<ToolCall>) -> Self {
-	    Self::ToolCalls(tool_calls)
+		Self::ToolCalls(tool_calls)
 	}
 }
 
@@ -47,10 +47,10 @@ impl MessageContent {
 	/// NOTE: When multi-part content is present, this will return None and won't concatenate the text parts.
 	#[must_use]
 	pub fn text_as_str(&self) -> Option<&str> {
-	    match self {
-	        Self::Text(content) => Some(content.as_str()),
-	        Self::Parts(_) | Self::ToolCalls(_) | Self::ToolResponses(_) => None,
-	    }
+		match self {
+			Self::Text(content) => Some(content.as_str()),
+			Self::Parts(_) | Self::ToolCalls(_) | Self::ToolResponses(_) => None,
+		}
 	}
 
 	/// Consumes the `MessageContent` and returns it as &str,
@@ -59,21 +59,21 @@ impl MessageContent {
 	/// NOTE: When multi-part content is present, this will return None and won't concatenate the text parts.
 	#[must_use]
 	pub fn text_into_string(self) -> Option<String> {
-	    match self {
-	        Self::Text(content) => Some(content),
-	        Self::Parts(_) | Self::ToolCalls(_) | Self::ToolResponses(_) => None,
-	    }
+		match self {
+			Self::Text(content) => Some(content),
+			Self::Parts(_) | Self::ToolCalls(_) | Self::ToolResponses(_) => None,
+		}
 	}
 
 	/// Checks if the text content or the tool calls are empty.
 	#[must_use]
 	pub fn is_empty(&self) -> bool {
-	    match self {
-	        Self::Text(content) => content.is_empty(),
-	        Self::Parts(parts) => parts.is_empty(),
-	        Self::ToolCalls(tool_calls) => tool_calls.is_empty(),
-	        Self::ToolResponses(tool_responses) => tool_responses.is_empty(),
-	    }
+		match self {
+			Self::Text(content) => content.is_empty(),
+			Self::Parts(parts) => parts.is_empty(),
+			Self::ToolCalls(tool_calls) => tool_calls.is_empty(),
+			Self::ToolResponses(tool_responses) => tool_responses.is_empty(),
+		}
 	}
 }
 
@@ -120,21 +120,21 @@ pub enum ContentPart {
 /// Constructors
 impl ContentPart {
 	pub fn from_text(text: impl Into<String>) -> Self {
-	    Self::Text(text.into())
+		Self::Text(text.into())
 	}
 
 	pub fn from_image_base64(content_type: impl Into<String>, content: impl Into<Arc<str>>) -> Self {
-	    Self::Image {
-	        content_type: content_type.into(),
-	        source: ImageSource::Base64(content.into()),
-	    }
+		Self::Image {
+			content_type: content_type.into(),
+			source: ImageSource::Base64(content.into()),
+		}
 	}
 
 	pub fn from_image_url(content_type: impl Into<String>, url: impl Into<String>) -> Self {
-	    Self::Image {
-	        content_type: content_type.into(),
-	        source: ImageSource::Url(url.into()),
-	    }
+		Self::Image {
+			content_type: content_type.into(),
+			source: ImageSource::Url(url.into()),
+		}
 	}
 }
 

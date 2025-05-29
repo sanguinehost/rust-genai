@@ -320,15 +320,22 @@ impl GeminiAdapter {
 			// Assuming content is in /content/parts/0 as before for each candidate
 			match candidate_json.x_take::<Value>("/content/parts/0") {
 				Ok(mut response_part) => {
-					let content = response_part.x_take::<Value>("functionCall").map_or_else(|_| response_part
-							.x_take::<Value>("text")
-							.ok()
-							.and_then(|v| v.as_str().map(String::from))
-							.map(GeminiChatContent::Text), |f| Some(GeminiChatContent::ToolCall(ToolCall {
-							call_id: f.x_get("name").unwrap_or_else(|_| String::new()),
-							fn_name: f.x_get("name").unwrap_or_else(|_| String::new()),
-							fn_arguments: f.x_get("args").unwrap_or(Value::Null),
-						})));
+					let content = response_part.x_take::<Value>("functionCall").map_or_else(
+						|_| {
+							response_part
+								.x_take::<Value>("text")
+								.ok()
+								.and_then(|v| v.as_str().map(String::from))
+								.map(GeminiChatContent::Text)
+						},
+						|f| {
+							Some(GeminiChatContent::ToolCall(ToolCall {
+								call_id: f.x_get("name").unwrap_or_else(|_| String::new()),
+								fn_name: f.x_get("name").unwrap_or_else(|_| String::new()),
+								fn_arguments: f.x_get("args").unwrap_or(Value::Null),
+							}))
+						},
+					);
 					if let Some(content_item) = content {
 						gemini_contents.push(content_item);
 					}
@@ -344,7 +351,10 @@ impl GeminiAdapter {
 		// Usage is typically overall for the request, not per candidate.
 		let usage = body.x_take::<Value>("usageMetadata").map(Self::into_usage).unwrap_or_default();
 
-		Ok(GeminiChatResponse { contents: gemini_contents, usage })
+		Ok(GeminiChatResponse {
+			contents: gemini_contents,
+			usage,
+		})
 	}
 
 	/// See gemini doc: <https://ai.google.dev/api/generate-content#UsageMetadata>

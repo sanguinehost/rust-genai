@@ -16,7 +16,10 @@ where
 	T: Into<DataContainer<'a>>,
 {
 	let container: DataContainer = data.into();
-	assert!(!container.contains(val), "Should not contain: {val}\nBut was: {container:?}");
+	assert!(
+		!container.contains(val),
+		"Should not contain: {val}\nBut was: {container:?}"
+	);
 }
 
 // region:    --- Support Types
@@ -99,7 +102,6 @@ mod tests {
 
 		let data_str = "This is a test string";
 		assert_contains(data_str, "test");
-
 	}
 }
 
