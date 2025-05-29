@@ -16,6 +16,14 @@ pub enum ChatResponseFormat {
 	/// Request to return a structured output.
 	#[from]
 	JsonSpec(JsonSpec),
+
+	/// Request to return an enum value.
+	#[from]
+	EnumSpec(EnumSpec),
+
+	/// Request to return a structured output using the new JSON Schema (Gemini 2.5+).
+	#[from]
+	JsonSchemaSpec(JsonSchemaSpec),
 }
 
 /// The JSON specification for the structured output format.
@@ -32,6 +40,19 @@ pub struct JsonSpec {
 	pub schema: Value,
 }
 
+/// The Enum specification for the structured output format.
+#[derive(Debug, Clone, From, Serialize, Deserialize)]
+pub struct EnumSpec {
+	pub mime_type: String,
+	pub schema: Value,
+}
+
+/// The JSON Schema specification for the structured output format (Gemini 2.5+).
+#[derive(Debug, Clone, From, Serialize, Deserialize)]
+pub struct JsonSchemaSpec {
+	pub schema: Value,
+}
+
 /// Constructors
 impl JsonSpec {
 	/// Create a new `JsonSpec` from name and schema.
@@ -41,6 +62,23 @@ impl JsonSpec {
 			description: None,
 			schema: schema.into(),
 		}
+	}
+}
+
+impl EnumSpec {
+	/// Create a new `EnumSpec` from schema.
+	pub fn new(schema: impl Into<Value>) -> Self {
+		Self {
+			mime_type: "text/x.enum".to_string(),
+			schema: schema.into(),
+		}
+	}
+}
+
+impl JsonSchemaSpec {
+	/// Create a new `JsonSchemaSpec` from schema.
+	pub fn new(schema: impl Into<Value>) -> Self {
+		Self { schema: schema.into() }
 	}
 }
 

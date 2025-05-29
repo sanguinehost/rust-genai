@@ -242,6 +242,14 @@ impl OpenAIAdapter {
 						}
 					})
 				}
+				ChatResponseFormat::EnumSpec(_) => {
+					tracing::warn!("OpenAIAdapter: ChatResponseFormat::EnumSpec is not directly supported. Consider using JsonSpec with a schema for constrained JSON output.");
+					json!({"type": "json_object"}) // Fallback to json_object
+				}
+				ChatResponseFormat::JsonSchemaSpec(_) => {
+					tracing::warn!("OpenAIAdapter: ChatResponseFormat::JsonSchemaSpec is not directly supported. Consider using JsonSpec with a schema for constrained JSON output.");
+					json!({"type": "json_object"}) // Fallback to json_object
+				}
 			}
 		});
 

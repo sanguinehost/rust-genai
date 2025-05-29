@@ -73,7 +73,6 @@ impl Adapter for GeminiAdapter {
 	async fn all_model_names(_kind: AdapterKind) -> Result<Vec<String>> {
 		Ok(MODELS.iter().map(ToString::to_string).collect())
 	}
-
 	/// NOTE: As Google Gemini has decided to put their `API_KEY` in the URL,
 	///       this will return the URL without the `API_KEY` in it. The `API_KEY` will need to be added by the caller.
 	fn get_service_url(model: &ModelIden, service_type: ServiceType, endpoint: Endpoint) -> String {
@@ -180,19 +179,39 @@ impl Adapter for GeminiAdapter {
 		}
 
 		// -- Response Format
-		if let Some(ChatResponseFormat::JsonSpec(st_json)) = options_set.response_format() {
-			// x_insert
-			//     responseMimeType: "application/json",
-			// responseSchema: {
-			payload.x_insert("/generationConfig/responseMimeType", "application/json")?;
-			let mut schema = st_json.schema.clone();
-			schema.x_walk(|parent_map, name| {
-				if name == "additionalProperties" {
-					parent_map.remove("additionalProperties");
+		if let Some(response_format) = options_set.response_format() {
+			match response_format {
+				ChatResponseFormat::JsonSpec(st_json) => {
+					payload.x_insert("/generationConfig/responseMimeType", "application/json")?;
+					let mut schema = st_json.schema.clone();
+					schema.x_walk(|parent_map, name| {
+						if name == "additionalProperties" {
+							parent_map.remove("additionalProperties");
+						}
+						true
+					});
+					payload.x_insert("/generationConfig/responseSchema", schema)?;
 				}
-				true
-			});
-			payload.x_insert("/generationConfig/responseSchema", schema)?;
+				ChatResponseFormat::EnumSpec(enum_spec) => {
+					payload.x_insert("/generationConfig/responseMimeType", enum_spec.mime_type.clone())?;
+					payload.x_insert("/generationConfig/responseSchema", enum_spec.schema.clone())?;
+				}
+				ChatResponseFormat::JsonSchemaSpec(json_schema_spec) => {
+					// Note: Gemini 2.5+ models support response_json_schema
+					// This requires a different endpoint version (v1alpha)
+					// For now, we'll assume the model supports it and the endpoint is handled elsewhere if needed.
+					payload.x_insert("/generationConfig/responseMimeType", "application/json")?;
+					payload.x_insert("/generationConfig/responseJsonSchema", json_schema_spec.schema.clone())?;
+				}
+				ChatResponseFormat::JsonMode => {
+					// Gemini does not have a direct "json_mode" like OpenAI.
+					// The closest is to set responseMimeType to application/json without a schema.
+					// However, the documentation recommends using responseSchema for constrained JSON.
+					// For now, we will not set anything for JsonMode, as it's typically handled by prompt engineering.
+					// If a schema is not provided, the model is not constrained to output JSON.
+					tracing::warn!("GeminiAdapter: ChatResponseFormat::JsonMode is not directly supported. Consider using JsonSpec with a schema for constrained JSON output.");
+				}
+			}
 		}
 
 		// -- Add supported ChatOptions
@@ -683,7 +702,6 @@ impl GeminiAdapter {
 	) -> Result<WebRequestData> {
 		let ServiceTarget { endpoint, auth, model } = target;
 		let api_key = get_api_key(&auth, &model)?;
-
 		let url = Self::get_service_url(&model, ServiceType::ImageGenerationImagen, endpoint);
 		let url = format!("{url}?key={api_key}");
 
@@ -755,7 +773,6 @@ impl GeminiAdapter {
 	) -> Result<WebRequestData> {
 		let ServiceTarget { endpoint, auth, model } = target;
 		let api_key = get_api_key(&auth, &model)?;
-
 		let url = Self::get_service_url(&model, ServiceType::VideoGenerationVeo, endpoint);
 		let url = format!("{url}?key={api_key}");
 

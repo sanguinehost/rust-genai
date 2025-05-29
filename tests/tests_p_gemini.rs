@@ -369,4 +369,129 @@ async fn test_chat_allowed_function_names_ok() -> Result<()> {
 	Ok(())
 }
 
+#[tokio::test]
+async fn test_chat_enum_structured_ok() -> Result<()> {
+	use genai::chat::{ChatResponseFormat, EnumSpec};
+
+	let client = support::common_client_gemini();
+	let messages = vec![ChatMessage::user("What type of instrument is an oboe?")];
+
+	let enum_schema = json!({
+		"type": "STRING",
+		"enum": ["Percussion", "String", "Woodwind", "Brass", "Keyboard"],
+	});
+
+	let chat_options = ChatOptions::default().with_response_format(ChatResponseFormat::EnumSpec(EnumSpec::new(enum_schema)));
+	let chat_req = ChatRequest::new(messages);
+
+	let res = client.exec_chat(MODEL, chat_req, Some(&chat_options)).await?;
+	assert!(!res.contents.is_empty(), "Expected content in response");
+
+	if let Some(genai::chat::MessageContent::Text(text_content)) = res.contents.first() {
+		println!("test_chat_enum_structured_ok - Response: {text_content}");
+		assert!(
+			["Percussion", "String", "Woodwind", "Brass", "Keyboard"]
+				.iter()
+				.any(|&s| text_content.trim() == s),
+			"Response text '{text_content}' is not one of the expected enum values"
+		);
+	} else {
+		panic!("Expected a text response, got: {:?}", res.contents);
+	}
+
+	Ok(())
+}
+
+#[tokio::test]
+async fn test_chat_json_schema_structured_ok() -> Result<()> {
+	use genai::chat::{ChatResponseFormat, JsonSchemaSpec};
+
+	let client = support::common_client_gemini();
+	let messages = vec![ChatMessage::user("Please give a random example following this schema: UserProfile = { username: string, age: optional<int>, roles: array<UserRole>, contact: (Address | string) } UserRole = enum('admin', 'viewer') Address = { street: string, city: string }")];
+
+	let json_schema = json!({
+		"title": "UserProfile",
+		"type": "object",
+		"properties": {
+			"username": {
+				"type": "string",
+				"description": "User's unique name"
+			},
+			"age": {
+				"type": "integer",
+				"minimum": 0,
+				"maximum": 120
+			},
+			"roles": {
+				"type": "array",
+				"minItems": 1,
+				"items": {
+					"type": "string",
+					"enum": ["admin", "viewer"]
+				}
+			},
+			"contact": {
+				"anyOf": [
+					{
+						"type": "object",
+						"properties": {
+							"street": { "type": "string" },
+							"city": { "type": "string" }
+						},
+						"required": ["street", "city"]
+					},
+					{ "type": "string" }
+				]
+			}
+		},
+		"required": ["username", "roles", "contact"]
+	});
+
+	let chat_options = ChatOptions::default().with_response_format(ChatResponseFormat::JsonSchemaSpec(JsonSchemaSpec::new(json_schema)));
+	let chat_req = ChatRequest::new(messages);
+
+	// Use a model that supports JSON Schema (e.g., gemini-2.5-flash-preview-05-20 or newer)
+	let res = client.exec_chat(MODEL, chat_req, Some(&chat_options)).await?;
+	assert!(!res.contents.is_empty(), "Expected content in response");
+
+	if let Some(genai::chat::MessageContent::Text(text_content)) = res.contents.first() {
+		println!("test_chat_json_schema_structured_ok - Response: {text_content}");
+		// Attempt to parse the response as JSON to validate its structure
+		let parsed_json: serde_json::Value = serde_json::from_str(text_content)?;
+
+		// Basic validation of the parsed JSON against the schema's expected top-level properties
+		assert!(parsed_json.is_object(), "Expected JSON object response");
+		assert!(parsed_json.get("username").is_some(), "Expected 'username' field");
+		assert!(parsed_json.get("roles").is_some(), "Expected 'roles' field");
+		assert!(parsed_json.get("contact").is_some(), "Expected 'contact' field");
+
+		if let Some(roles_array) = parsed_json.get("roles").and_then(|v| v.as_array()) {
+			assert!(!roles_array.is_empty(), "Expected at least one role");
+			for role in roles_array {
+				assert!(role.is_string(), "Role should be a string");
+				let role_str = role.as_str().unwrap();
+				assert!(
+					role_str == "admin" || role_str == "viewer",
+					"Role '{role_str}' is not a valid enum value"
+				);
+			}
+		} else {
+			panic!("Expected 'roles' to be an array");
+		}
+
+		if let Some(contact_value) = parsed_json.get("contact") {
+			if contact_value.is_object() {
+				assert!(contact_value.get("street").is_some(), "Expected 'street' in contact object");
+				assert!(contact_value.get("city").is_some(), "Expected 'city' in contact object");
+			} else {
+				assert!(contact_value.is_string(), "Expected 'contact' to be a string or object");
+			}
+		}
+	} else {
+		panic!("Expected a text response, got: {:?}", res.contents);
+	}
+
+	Ok(())
+}
+
 // endregion: --- New Advanced Options Tests
