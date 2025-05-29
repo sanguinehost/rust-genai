@@ -116,7 +116,7 @@ async fn test_conversational_image_generation_ok() -> Result<(), String> {
 						}
 						genai::chat::ContentPart::Image { content_type, source } => {
 							println!("      Part #{part_idx} Image - MimeType: {content_type}");
-							if let genai::chat::ImageSource::Base64(b64_data) = source {
+							if let genai::chat::MediaSource::Base64(b64_data) = source {
 								save_image_bytes(
 									"conversational_img",
 									content_idx * 100 + part_idx, // Unique index for multiple images/contents
@@ -124,6 +124,9 @@ async fn test_conversational_image_generation_ok() -> Result<(), String> {
 								)?;
 								image_found = true;
 							}
+						}
+						genai::chat::ContentPart::Document { .. } => {
+							println!("      Part #{part_idx} Document - Skipped for image tests");
 						}
 					}
 				}

@@ -1,4 +1,5 @@
 mod support;
+mod tests_p_gemini_document; // Added for document understanding tests
 
 use crate::support::{Check, common_tests};
 use genai::adapter::AdapterKind;
@@ -381,7 +382,8 @@ async fn test_chat_enum_structured_ok() -> Result<()> {
 		"enum": ["Percussion", "String", "Woodwind", "Brass", "Keyboard"],
 	});
 
-	let chat_options = ChatOptions::default().with_response_format(ChatResponseFormat::EnumSpec(EnumSpec::new(enum_schema)));
+	let chat_options =
+		ChatOptions::default().with_response_format(ChatResponseFormat::EnumSpec(EnumSpec::new(enum_schema)));
 	let chat_req = ChatRequest::new(messages);
 
 	let res = client.exec_chat(MODEL, chat_req, Some(&chat_options)).await?;
@@ -407,7 +409,9 @@ async fn test_chat_json_schema_structured_ok() -> Result<()> {
 	use genai::chat::{ChatResponseFormat, JsonSchemaSpec};
 
 	let client = support::common_client_gemini();
-	let messages = vec![ChatMessage::user("Please give a random example following this schema: UserProfile = { username: string, age: optional<int>, roles: array<UserRole>, contact: (Address | string) } UserRole = enum('admin', 'viewer') Address = { street: string, city: string }")];
+	let messages = vec![ChatMessage::user(
+		"Please give a random example following this schema: UserProfile = { username: string, age: optional<int>, roles: array<UserRole>, contact: (Address | string) } UserRole = enum('admin', 'viewer') Address = { street: string, city: string }",
+	)];
 
 	let json_schema = json!({
 		"title": "UserProfile",
@@ -447,7 +451,8 @@ async fn test_chat_json_schema_structured_ok() -> Result<()> {
 		"required": ["username", "roles", "contact"]
 	});
 
-	let chat_options = ChatOptions::default().with_response_format(ChatResponseFormat::JsonSchemaSpec(JsonSchemaSpec::new(json_schema)));
+	let chat_options = ChatOptions::default()
+		.with_response_format(ChatResponseFormat::JsonSchemaSpec(JsonSchemaSpec::new(json_schema)));
 	let chat_req = ChatRequest::new(messages);
 
 	// Use a model that supports JSON Schema (e.g., gemini-2.5-flash-preview-05-20 or newer)
@@ -481,7 +486,10 @@ async fn test_chat_json_schema_structured_ok() -> Result<()> {
 
 		if let Some(contact_value) = parsed_json.get("contact") {
 			if contact_value.is_object() {
-				assert!(contact_value.get("street").is_some(), "Expected 'street' in contact object");
+				assert!(
+					contact_value.get("street").is_some(),
+					"Expected 'street' in contact object"
+				);
 				assert!(contact_value.get("city").is_some(), "Expected 'city' in contact object");
 			} else {
 				assert!(contact_value.is_string(), "Expected 'contact' to be a string or object");

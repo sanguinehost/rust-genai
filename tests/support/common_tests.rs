@@ -6,8 +6,8 @@ use crate::support::{
 };
 use genai::adapter::AdapterKind;
 use genai::chat::{
-	CacheControl, ChatMessage, ChatOptions, ChatRequest, ChatResponseFormat, ChatRole, ContentPart, ImageSource,
-	JsonSpec, MessageContent, Tool, ToolResponse,
+	CacheControl, ChatMessage, ChatOptions, ChatRequest, ChatResponseFormat, ChatRole, ContentPart, JsonSpec,
+	MediaSource, MessageContent, Tool, ToolResponse,
 };
 use genai::resolver::{AuthData, AuthResolver, AuthResolverFn, IntoAuthResolverFn};
 use genai::{Client, ClientConfig, ModelIden};

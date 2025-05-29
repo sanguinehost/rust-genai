@@ -93,7 +93,7 @@ async fn test_conversational_image_generation() -> Result<(), Box<dyn std::error
 							println!("  Text part: {text}");
 						}
 						genai::chat::ContentPart::Image { source, .. } => {
-							if let genai::chat::ImageSource::Base64(data) = source {
+							if let genai::chat::MediaSource::Base64(data) = source {
 								let filename = format!(
 									"output/conversational_test_{}_{}_{}.png",
 									get_timestamp(),
@@ -103,6 +103,9 @@ async fn test_conversational_image_generation() -> Result<(), Box<dyn std::error
 								save_image(&filename, data)?;
 								image_count += 1;
 							}
+						}
+						genai::chat::ContentPart::Document { .. } => {
+							// Skip documents in image generation test
 						}
 					}
 				}
@@ -240,7 +243,7 @@ async fn test_conversational_generation_impl() -> Result<(), Box<dyn std::error:
 							println!("  Text part: {text}");
 						}
 						genai::chat::ContentPart::Image { source, .. } => {
-							if let genai::chat::ImageSource::Base64(data) = source {
+							if let genai::chat::MediaSource::Base64(data) = source {
 								let filename = format!(
 									"output/conversational_test_{}_{}_{}.png",
 									get_timestamp(),
@@ -250,6 +253,9 @@ async fn test_conversational_generation_impl() -> Result<(), Box<dyn std::error:
 								save_image(&filename, data)?;
 								image_count += 1;
 							}
+						}
+						genai::chat::ContentPart::Document { .. } => {
+							// Skip documents in image generation test
 						}
 					}
 				}

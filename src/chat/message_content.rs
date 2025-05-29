@@ -111,10 +111,11 @@ impl From<Vec<ContentPart>> for MessageContent {
 
 // endregion: --- Froms
 
-#[derive(Debug, Clone, Serialize, Deserialize, From)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ContentPart {
 	Text(String),
-	Image { content_type: String, source: ImageSource },
+	Image { content_type: String, source: MediaSource },
+	Document { content_type: String, source: MediaSource },
 }
 
 /// Constructors
@@ -126,14 +127,28 @@ impl ContentPart {
 	pub fn from_image_base64(content_type: impl Into<String>, content: impl Into<Arc<str>>) -> Self {
 		Self::Image {
 			content_type: content_type.into(),
-			source: ImageSource::Base64(content.into()),
+			source: MediaSource::Base64(content.into()),
 		}
 	}
 
 	pub fn from_image_url(content_type: impl Into<String>, url: impl Into<String>) -> Self {
 		Self::Image {
 			content_type: content_type.into(),
-			source: ImageSource::Url(url.into()),
+			source: MediaSource::Url(url.into()),
+		}
+	}
+
+	pub fn from_document_base64(content_type: impl Into<String>, content: impl Into<Arc<str>>) -> Self {
+		Self::Document {
+			content_type: content_type.into(),
+			source: MediaSource::Base64(content.into()),
+		}
+	}
+
+	pub fn from_document_url(content_type: impl Into<String>, url: impl Into<String>) -> Self {
+		Self::Document {
+			content_type: content_type.into(),
+			source: MediaSource::Url(url.into()),
 		}
 	}
 }
@@ -149,12 +164,12 @@ impl<'a> From<&'a str> for ContentPart {
 // endregion: --- Froms
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum ImageSource {
+pub enum MediaSource {
 	/// For models/services that support URL as input
 	/// NOTE: Few AI services support this.
 	Url(String),
 
-	/// The base64 string of the image
+	/// The base64 string of the media
 	///
 	/// NOTE: Here we use an Arc<str> to avoid cloning large amounts of data when cloning a `ChatRequest`.
 	///       The overhead is minimal compared to cloning relatively large data.

@@ -100,7 +100,8 @@ impl futures::Stream for GeminiStreamer {
 										.into_iter()
 										.filter_map(|part| match part {
 											crate::chat::ContentPart::Text(text) => Some(text),
-											crate::chat::ContentPart::Image { .. } => None, // Ignore image parts for streaming chunks
+											crate::chat::ContentPart::Image { .. }
+											| crate::chat::ContentPart::Document { .. } => None, // Ignore image and document parts for streaming chunks
 										})
 										.collect();
 

@@ -3,7 +3,7 @@ use crate::adapter::adapters::support::get_api_key;
 use crate::adapter::{Adapter, AdapterDispatcher, AdapterKind, ServiceType, WebRequestData};
 use crate::chat::{
 	ChatOptionsSet, ChatRequest, ChatResponse, ChatResponseFormat, ChatRole, ChatStream, ChatStreamResponse,
-	ContentPart, ImageSource, MessageContent, ReasoningEffort, ToolCall, Usage,
+	ContentPart, MediaSource, MessageContent, ReasoningEffort, ToolCall, Usage,
 };
 use crate::resolver::{AuthData, Endpoint};
 use crate::webc::WebResponse;
@@ -340,12 +340,24 @@ impl OpenAIAdapter {
 										ContentPart::Text(text) => json!({"type": "text", "text": text.clone()}),
 										ContentPart::Image { content_type, source } => {
 											match source {
-												ImageSource::Url(url) => {
+												MediaSource::Url(url) => {
 													json!({"type": "image_url", "image_url": {"url": url}})
 												}
-												ImageSource::Base64(content) => {
+												MediaSource::Base64(content) => {
 													let image_url = format!("data:{content_type};base64,{content}");
 													json!({"type": "image_url", "image_url": {"url": image_url}})
+												}
+											}
+										}
+										ContentPart::Document { content_type, source } => {
+											// OpenAI treats documents similar to images
+											match source {
+												MediaSource::Url(url) => {
+													json!({"type": "image_url", "image_url": {"url": url}})
+												}
+												MediaSource::Base64(content) => {
+													let doc_url = format!("data:{content_type};base64,{content}");
+													json!({"type": "image_url", "image_url": {"url": doc_url}})
 												}
 											}
 										}

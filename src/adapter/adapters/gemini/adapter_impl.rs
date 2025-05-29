@@ -11,9 +11,9 @@ use crate::chat::{
 	ChatStreamResponse,
 	CompletionTokensDetails,
 	ContentPart,
-	ImageSource,
 	ImagenGenerateImagesRequest,
 	ImagenGenerateImagesResponse, // Added for Imagen
+	MediaSource,                  // Added for document understanding
 	MessageContent,
 	PromptTokensDetails,
 	ReasoningEffort,
@@ -201,7 +201,7 @@ impl Adapter for GeminiAdapter {
 					// This requires a different endpoint version (v1alpha)
 					// For now, we'll assume the model supports it and the endpoint is handled elsewhere if needed.
 					payload.x_insert("/generationConfig/responseMimeType", "application/json")?;
-					payload.x_insert("/generationConfig/responseJsonSchema", json_schema_spec.schema.clone())?;
+					payload.x_insert("/generationConfig/responseSchema", json_schema_spec.schema.clone())?;
 				}
 				ChatResponseFormat::JsonMode => {
 					// Gemini does not have a direct "json_mode" like OpenAI.
@@ -209,7 +209,9 @@ impl Adapter for GeminiAdapter {
 					// However, the documentation recommends using responseSchema for constrained JSON.
 					// For now, we will not set anything for JsonMode, as it's typically handled by prompt engineering.
 					// If a schema is not provided, the model is not constrained to output JSON.
-					tracing::warn!("GeminiAdapter: ChatResponseFormat::JsonMode is not directly supported. Consider using JsonSpec with a schema for constrained JSON output.");
+					tracing::warn!(
+						"GeminiAdapter: ChatResponseFormat::JsonMode is not directly supported. Consider using JsonSpec with a schema for constrained JSON output."
+					);
 				}
 			}
 		}
@@ -390,11 +392,30 @@ impl GeminiAdapter {
 					let data = inline_data_json.x_take::<String>("data")?;
 					content_parts.push(ContentPart::Image {
 						content_type: mime_type,
-						source: ImageSource::Base64(data.into()),
+						source: MediaSource::Base64(data.into()),
 					});
 					has_image_content = true;
+				} else if let Ok(mut file_data_json) = part_json.x_take::<Value>("fileData") {
+					let mime_type = file_data_json.x_take::<String>("mimeType")?;
+					let file_uri = file_data_json.x_take::<String>("fileUri")?;
+					// Determine if it's an image or document based on mime_type or context.
+					// For simplicity, assuming PDF for now, but could be extended.
+					if mime_type.starts_with("image/") {
+						content_parts.push(ContentPart::Image {
+							content_type: mime_type,
+							source: MediaSource::Url(file_uri),
+						});
+						has_image_content = true;
+					} else if mime_type.starts_with("application/pdf") {
+						content_parts.push(ContentPart::Document {
+							content_type: mime_type,
+							source: MediaSource::Url(file_uri),
+						});
+					} else {
+						// Handle other file types if necessary, or return an error
+						tracing::warn!("Unsupported fileData mime_type: {}", mime_type);
+					}
 				}
-				// Potentially other part types like `fileData` could be handled here if needed.
 			}
 
 			if !content_parts.is_empty() {
@@ -534,15 +555,16 @@ impl GeminiAdapter {
 									.iter()
 									.map(|part| match part {
 										ContentPart::Text(text) => json!({"text": text.clone()}),
-										ContentPart::Image { content_type, source } => {
+										ContentPart::Image { content_type, source }
+										| ContentPart::Document { content_type, source } => {
 											match source {
-												ImageSource::Url(url) => json!({
+												MediaSource::Url(url) => json!({
 													"file_data": {
 														"mime_type": content_type,
 														"file_uri": url
 													}
 												}),
-												ImageSource::Base64(content) => json!({
+												MediaSource::Base64(content) => json!({
 													"inline_data": {
 														"mime_type": content_type,
 														"data": content
@@ -997,7 +1019,7 @@ impl From<GeminiChatContent> for MessageContent {
 				if parts.len() == 1 {
 					match &parts[0] {
 						ContentPart::Text(text) => Self::Text(text.clone()),
-						ContentPart::Image { .. } => Self::Parts(parts),
+						ContentPart::Image { .. } | ContentPart::Document { .. } => Self::Parts(parts),
 					}
 				} else {
 					Self::Parts(parts)

@@ -1,5 +1,5 @@
 use super::Result;
-use genai::chat::{ChatMessage, ChatRequest, ContentPart, ImageSource, Tool};
+use genai::chat::{ChatMessage, ChatRequest, ContentPart, MediaSource, Tool};
 use serde_json::json;
 use simple_fs::{list_files, read_to_string};
 

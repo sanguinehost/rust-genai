@@ -3,7 +3,7 @@ use crate::ModelIden;
 use crate::adapter::adapters::support::get_api_key;
 use crate::adapter::{Adapter, AdapterKind, ServiceType, WebRequestData};
 use crate::chat::{
-	ChatOptionsSet, ChatRequest, ChatResponse, ChatRole, ChatStream, ChatStreamResponse, ContentPart, ImageSource,
+	ChatOptionsSet, ChatRequest, ChatResponse, ChatRole, ChatStream, ChatStreamResponse, ContentPart, MediaSource,
 	MessageContent, PromptTokensDetails, ToolCall, Usage,
 };
 use crate::resolver::{AuthData, Endpoint};
@@ -321,15 +321,31 @@ impl AnthropicAdapter {
 								.filter_map(|part| match part {
 									ContentPart::Text(text) => Some(json!({"type": "text", "text": text})),
 									ContentPart::Image { content_type, source } => match source {
-										ImageSource::Url(_) => {
+										MediaSource::Url(_) => {
 											// TODO: Might need to return an error here.
 											warn!(
 												"Anthropic doesn't support images from URL, need to handle it gracefully"
 											);
 											None
 										}
-										ImageSource::Base64(content) => Some(json!({
+										MediaSource::Base64(content) => Some(json!({
 											"type": "image",
+											"source": {
+												"type": "base64",
+												"media_type": content_type,
+												"data": content,
+											},
+										})),
+									},
+									ContentPart::Document { content_type, source } => match source {
+										MediaSource::Url(_) => {
+											warn!(
+												"Anthropic doesn't support documents from URL, need to handle it gracefully"
+											);
+											None
+										}
+										MediaSource::Base64(content) => Some(json!({
+											"type": "document",
 											"source": {
 												"type": "base64",
 												"media_type": content_type,
