@@ -46,11 +46,11 @@ impl Adapter for OpenAIAdapter {
 
 	/// Note: Currently returns the common models (see above)
 	async fn all_model_names(_kind: AdapterKind) -> Result<Vec<String>> {
-		Ok(MODELS.iter().map(|s| s.to_string()).collect())
+		Ok(MODELS.iter().map(ToString::to_string).collect())
 	}
 
 	fn get_service_url(model: &ModelIden, service_type: ServiceType, endpoint: Endpoint) -> String {
-		Self::util_get_service_url(model, service_type, endpoint)
+		Self::util_get_service_url(model, service_type, &endpoint)
 	}
 
 	fn to_web_request_data(
@@ -59,7 +59,7 @@ impl Adapter for OpenAIAdapter {
 		chat_req: ChatRequest,
 		chat_options: ChatOptionsSet<'_, '_>,
 	) -> Result<WebRequestData> {
-		OpenAIAdapter::util_to_web_request_data(target, service_type, chat_req, chat_options)
+		Self::util_to_web_request_data(target, service_type, chat_req, &chat_options)
 	}
 
 	fn to_chat_response(
@@ -76,7 +76,7 @@ impl Adapter for OpenAIAdapter {
 		// -- Capture the usage
 		let usage = body
 			.x_take("usage")
-			.map(|value| OpenAIAdapter::into_usage(model_iden.adapter_kind, value))
+			.map(|value| Self::into_usage(model_iden.adapter_kind, value))
 			.unwrap_or_default();
 
 		// -- Capture the content
@@ -127,7 +127,7 @@ impl Adapter for OpenAIAdapter {
 		options_sets: ChatOptionsSet<'_, '_>,
 	) -> Result<ChatStreamResponse> {
 		let event_source = EventSource::new(reqwest_builder)?;
-		let openai_stream = OpenAIStreamer::new(event_source, model_iden.clone(), options_sets);
+		let openai_stream = OpenAIStreamer::new(event_source, model_iden.clone(), &options_sets);
 		let chat_stream = ChatStream::from_inter_stream(openai_stream);
 
 		Ok(ChatStreamResponse {
@@ -137,13 +137,13 @@ impl Adapter for OpenAIAdapter {
 	}
 }
 
-/// Support functions for other adapters that share OpenAI APIs
+/// Support functions for other adapters that share `OpenAI` APIs
 impl OpenAIAdapter {
 	pub(in crate::adapter::adapters) fn util_get_service_url(
 		_model: &ModelIden,
 		service_type: ServiceType,
 		// -- utility arguments
-		default_endpoint: Endpoint,
+		default_endpoint: &Endpoint,
 	) -> String {
 		let base_url = default_endpoint.base_url();
 		match service_type {
@@ -155,14 +155,14 @@ impl OpenAIAdapter {
 		target: ServiceTarget,
 		service_type: ServiceType,
 		chat_req: ChatRequest,
-		options_set: ChatOptionsSet<'_, '_>,
+		options_set: &ChatOptionsSet<'_, '_>,
 	) -> Result<WebRequestData> {
 		let ServiceTarget { model, auth, endpoint } = target;
 		let model_name = &model.model_name;
 		let adapter_kind = model.adapter_kind;
 
 		// -- api_key
-		let api_key = get_api_key(auth, &model)?;
+		let api_key = get_api_key(&auth, &model)?;
 
 		// -- url
 		let url = AdapterDispatcher::get_service_url(&model, service_type, endpoint);
@@ -182,8 +182,7 @@ impl OpenAIAdapter {
 				let (reasoning_effort, model_name) = options_set
 					.reasoning_effort()
 					.cloned()
-					.map(|v| (Some(v), model_name.as_ref()))
-					.unwrap_or_else(|| ReasoningEffort::from_model_name(model_name));
+					.map_or_else(|| ReasoningEffort::from_model_name(model_name), |v| (Some(v), model_name.as_ref()));
 
 				(reasoning_effort, model_name)
 			} else {
@@ -192,7 +191,7 @@ impl OpenAIAdapter {
 
 		// -- Build the basic payload
 
-		let OpenAIRequestParts { messages, tools } = Self::into_openai_request_parts(&model, chat_req)?;
+		let OpenAIRequestParts { messages, tools } = Self::into_openai_request_parts(&model, chat_req);
 		let mut payload = json!({
 			"model": model_name,
 			"messages": messages,
@@ -212,37 +211,35 @@ impl OpenAIAdapter {
 		}
 
 		// -- Add options
-		let response_format = if let Some(response_format) = options_set.response_format() {
-			match response_format {
-				ChatResponseFormat::JsonMode => Some(json!({"type": "json_object"})),
-				ChatResponseFormat::JsonSpec(st_json) => {
-					// "type": "json_schema", "json_schema": {...}
+		let response_format = options_set.response_format().map(|response_format| {
+		  match response_format {
+		      ChatResponseFormat::JsonMode => json!({"type": "json_object"}),
+		      ChatResponseFormat::JsonSpec(st_json) => {
+		          // "type": "json_schema", "json_schema": {...}
 
-					let mut schema = st_json.schema.clone();
-					schema.x_walk(|parent_map, name| {
-						if name == "type" {
-							let typ = parent_map.get("type").and_then(|v| v.as_str()).unwrap_or("");
-							if typ == "object" {
-								parent_map.insert("additionalProperties".to_string(), false.into());
-							}
-						}
-						true
-					});
+		          let mut schema = st_json.schema.clone();
+		          schema.x_walk(|parent_map, name| {
+		              if name == "type" {
+		                  let typ = parent_map.get("type").and_then(|v| v.as_str()).unwrap_or("");
+		                  if typ == "object" {
+		                      parent_map.insert("additionalProperties".to_string(), false.into());
+		                  }
+		              }
+		              true
+		          });
 
-					Some(json!({
-						"type": "json_schema",
-						"json_schema": {
-							"name": st_json.name.clone(),
-							"strict": true,
-							// TODO: add description
-							"schema": schema,
-						}
-					}))
-				}
-			}
-		} else {
-			None
-		};
+		          json!({
+		              "type": "json_schema",
+		              "json_schema": {
+		                  "name": st_json.name.clone(),
+		                  "strict": true,
+		                  // TODO: add description
+		                  "schema": schema,
+		              }
+		          })
+		      }
+		  }
+});
 
 		if let Some(response_format) = response_format {
 			payload["response_format"] = response_format;
@@ -271,7 +268,7 @@ impl OpenAIAdapter {
 		Ok(WebRequestData { url, headers, payload })
 	}
 
-	/// Note: Needs to be called from super::streamer as well
+	/// Note: Needs to be called from `super::streamer` as well
 	pub(super) fn into_usage(adapter: AdapterKind, usage_value: Value) -> Usage {
 		// NOTE: here we make sure we do not fail since we do not want to break a response because usage parsing fail
 		let usage = serde_json::from_value(usage_value).map_err(|err| {
@@ -291,17 +288,17 @@ impl OpenAIAdapter {
 		if matches!(adapter, AdapterKind::Xai) {
 			if let Some(reasoning_tokens) = usage.completion_tokens_details.as_ref().and_then(|d| d.reasoning_tokens) {
 				let completion_tokens = usage.completion_tokens.unwrap_or(0);
-				usage.completion_tokens = Some(completion_tokens + reasoning_tokens)
+				usage.completion_tokens = Some(completion_tokens + reasoning_tokens);
 			}
 		}
 
 		usage
 	}
 
-	/// Takes the genai ChatMessages and builds the OpenAIChatRequestParts
+	/// Takes the genai `ChatMessages` and builds the `OpenAIChatRequestParts`
 	/// - `genai::ChatRequest.system`, if present, is added as the first message with role 'system'.
 	/// - All messages get added with the corresponding roles (tools are not supported for now)
-	fn into_openai_request_parts(_model_iden: &ModelIden, chat_req: ChatRequest) -> Result<OpenAIRequestParts> {
+	fn into_openai_request_parts(_model_iden: &ModelIden, chat_req: ChatRequest) -> OpenAIRequestParts {
 		let mut messages: Vec<Value> = Vec::new();
 
 		// -- Process the system
@@ -316,7 +313,7 @@ impl OpenAIAdapter {
 				// For now, system and tool messages go to the system
 				ChatRole::System => {
 					if let MessageContent::Text(content) = msg.content {
-						messages.push(json!({"role": "system", "content": content}))
+						messages.push(json!({"role": "system", "content": content}));
 					}
 					// TODO: Probably need to warn if it is a ToolCalls type of content
 				}
@@ -349,8 +346,7 @@ impl OpenAIAdapter {
 						// this way library would not compile if not all methods are implemented
 						// continue would allow to gracefully skip pushing unserializable message
 						// TODO: Probably need to warn if it is a ToolCalls type of content
-						MessageContent::ToolCalls(_) => continue,
-						MessageContent::ToolResponses(_) => continue,
+						MessageContent::ToolCalls(_) | MessageContent::ToolResponses(_) => continue,
 					};
 					messages.push(json! ({"role": "user", "content": content}));
 				}
@@ -371,11 +367,10 @@ impl OpenAIAdapter {
 								})
 							})
 							.collect::<Vec<Value>>();
-						messages.push(json! ({"role": "assistant", "tool_calls": tool_calls}))
+						messages.push(json! ({"role": "assistant", "tool_calls": tool_calls}));
 					}
 					// TODO: Probably need to trace/warn that this will be ignored
-					MessageContent::Parts(_) => (),
-					MessageContent::ToolResponses(_) => (),
+					MessageContent::Parts(_) | MessageContent::ToolResponses(_) => (),
 				},
 
 				ChatRole::Tool => {
@@ -385,7 +380,7 @@ impl OpenAIAdapter {
 								"role": "tool",
 								"content": tool_response.content,
 								"tool_call_id": tool_response.call_id,
-							}))
+							}));
 						}
 					}
 					// TODO: Probably need to trace/warn that this will be ignored
@@ -416,7 +411,7 @@ impl OpenAIAdapter {
 				.collect::<Vec<Value>>()
 		});
 
-		Ok(OpenAIRequestParts { messages, tools })
+		OpenAIRequestParts { messages, tools }
 	}
 }
 
@@ -442,7 +437,7 @@ fn extract_think(content: String) -> (String, Option<String>) {
 			let after_think = after_think.trim_start();
 
 			// Construct the final cleaned content in one allocation
-			let cleaned_content = format!("{}{}", before_think, after_think);
+			let cleaned_content = format!("{before_think}{after_think}");
 
 			return (cleaned_content, Some(think_content.to_string()));
 		}

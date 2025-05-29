@@ -119,12 +119,12 @@ async fn test_list_models() -> Result<()> {
 
 #[tokio::test]
 async fn test_chat_top_k_ok() -> Result<()> {
-	let client = support::common_client_gemini()?;
+	let client = support::common_client_gemini();
 	let chat_options = ChatOptions::default().with_top_k(40);
 	let messages = vec![ChatMessage::user("What is the capital of France?")];
 	let chat_req = ChatRequest::new(messages);
 
-	let res = client.exec_chat(MODEL.into(), chat_req, Some(&chat_options)).await?;
+	let res = client.exec_chat(MODEL, chat_req, Some(&chat_options)).await?;
 	assert!(!res.contents.is_empty(), "Expected content in response");
 	println!("test_chat_top_k_ok - Response Contents: {:?}", res.contents);
 	Ok(())
@@ -132,12 +132,12 @@ async fn test_chat_top_k_ok() -> Result<()> {
 
 #[tokio::test]
 async fn test_chat_seed_ok() -> Result<()> {
-	let client = support::common_client_gemini()?;
+	let client = support::common_client_gemini();
 	let chat_options = ChatOptions::default().with_seed(12345);
 	let messages = vec![ChatMessage::user("Tell me a short joke.")];
 	let chat_req = ChatRequest::new(messages);
 
-	let res = client.exec_chat(MODEL.into(), chat_req, Some(&chat_options)).await?;
+	let res = client.exec_chat(MODEL, chat_req, Some(&chat_options)).await?;
 	assert!(!res.contents.is_empty(), "Expected content in response");
 	println!("test_chat_seed_ok - Response Contents: {:?}", res.contents);
 	Ok(())
@@ -145,7 +145,7 @@ async fn test_chat_seed_ok() -> Result<()> {
 
 #[tokio::test]
 async fn test_chat_penalties_ok() -> Result<()> {
-	let client = support::common_client_gemini()?;
+	let client = support::common_client_gemini();
 	let chat_options = ChatOptions::default()
 		.with_presence_penalty(0.5)
 		.with_frequency_penalty(0.5);
@@ -153,7 +153,7 @@ async fn test_chat_penalties_ok() -> Result<()> {
 	let chat_req = ChatRequest::new(messages);
 
 	// Using gemini-1.5-pro for this test as it might have better support for penalties
-	let res = client.exec_chat("gemini-1.5-pro".into(), chat_req, Some(&chat_options)).await?;
+	let res = client.exec_chat("gemini-1.5-pro", chat_req, Some(&chat_options)).await?;
 	assert!(!res.contents.is_empty(), "Expected content in response");
 	println!("test_chat_penalties_ok - Response Contents: {:?}", res.contents);
 	Ok(())
@@ -161,24 +161,24 @@ async fn test_chat_penalties_ok() -> Result<()> {
 
 #[tokio::test]
 async fn test_chat_candidate_count_ok() -> Result<()> {
-	let client = support::common_client_gemini()?;
-	const EXPECTED_CANDIDATES: usize = 2;
-	let chat_options = ChatOptions::default().with_candidate_count(EXPECTED_CANDIDATES as i32);
+	let client = support::common_client_gemini();
+	let expected_candidates: usize = 2;
+	let chat_options = ChatOptions::default().with_candidate_count(expected_candidates.try_into()?);
 	let messages = vec![ChatMessage::user("Why is the sky blue? Give two slightly different explanations.")]; // Prompt to encourage different responses
 	let chat_req = ChatRequest::new(messages);
 
-	let res = client.exec_chat(MODEL.into(), chat_req, Some(&chat_options)).await?;
+	let res = client.exec_chat(MODEL, chat_req, Some(&chat_options)).await?;
 	assert!(!res.contents.is_empty(), "Expected content in response");
-	assert_eq!(res.contents.len(), EXPECTED_CANDIDATES, "Expected {} candidates, got {}", EXPECTED_CANDIDATES, res.contents.len());
+	assert_eq!(res.contents.len(), expected_candidates, "Expected {} candidates, got {}", expected_candidates, res.contents.len());
 
 	println!("test_chat_candidate_count_ok - Received {} candidates:", res.contents.len());
 	for (i, content) in res.contents.iter().enumerate() {
-		println!("  Candidate {}: {:?}", i, content);
+		println!("  Candidate {i}: {content:?}");
 		match content {
 			genai::chat::MessageContent::Text(text_content) => {
-				assert!(!text_content.is_empty(), "Candidate {} text should not be empty", i);
+				assert!(!text_content.is_empty(), "Candidate {i} text should not be empty");
 			}
-			_ => panic!("Candidate {} was not text as expected for this test", i),
+			_ => panic!("Candidate {i} was not text as expected for this test"),
 		}
 	}
 	Ok(())
@@ -186,16 +186,16 @@ async fn test_chat_candidate_count_ok() -> Result<()> {
 
 #[tokio::test]
 async fn test_chat_cached_content_id_ok() -> Result<()> {
-	let client = support::common_client_gemini()?;
+	let client = support::common_client_gemini();
 	let chat_options = ChatOptions::default().with_cached_content_id("cachedContents/some-test-id-that-does-not-exist-12345".to_string());
 	let messages = vec![ChatMessage::user("What is 2 + 2?")];
 	let chat_req = ChatRequest::new(messages);
 
-	let res = client.exec_chat(MODEL.into(), chat_req, Some(&chat_options)).await;
+	let res = client.exec_chat(MODEL, chat_req, Some(&chat_options)).await;
 	
 	if let Err(e) = &res {
-		println!("test_chat_cached_content_id_ok - Received error (potentially expected for invalid ID): {}", e);
-	} else if let Ok(response_ok) = &res {
+		println!("test_chat_cached_content_id_ok - Received error (potentially expected for invalid ID): {e}");
+	} else if let Ok(response_ok) = res {
 		assert!(!response_ok.contents.is_empty());
 		println!("test_chat_cached_content_id_ok - Response Contents: {:?}", response_ok.contents);
 	}
@@ -235,14 +235,14 @@ fn helper_dummy_tool_recipe() -> Tool {
 
 #[tokio::test]
 async fn test_chat_function_calling_mode_none_ok() -> Result<()> {
-	let client = support::common_client_gemini()?;
+	let client = support::common_client_gemini();
 	let tools = vec![helper_dummy_tool_weather()];
 	let chat_options = ChatOptions::default().with_function_calling_mode("NONE".to_string());
 	
 	let messages = vec![ChatMessage::user("What's the weather like in London?")];
 	let chat_req = ChatRequest::new(messages).with_tools(tools);
 
-	let res = client.exec_chat(MODEL.into(), chat_req, Some(&chat_options)).await?;
+	let res = client.exec_chat(MODEL, chat_req, Some(&chat_options)).await?;
 	assert!(!res.contents.is_empty(), "Expected text content in response");
 	assert!(!matches!(res.contents.first().as_ref().unwrap(), genai::chat::MessageContent::ToolCalls(_)), "Expected no tool calls when mode is NONE");
 	println!("test_chat_function_calling_mode_none_ok - Response Contents: {:?}", res.contents);
@@ -251,20 +251,20 @@ async fn test_chat_function_calling_mode_none_ok() -> Result<()> {
 
 #[tokio::test]
 async fn test_chat_function_calling_mode_auto_with_tool_ok() -> Result<()> {
-	let client = support::common_client_gemini()?;
+	let client = support::common_client_gemini();
 	let tools = vec![helper_dummy_tool_weather()];
 	let chat_options = ChatOptions::default().with_function_calling_mode("AUTO".to_string());
 	
 	let messages = vec![ChatMessage::user("What's the weather like in London?")];
 	let chat_req = ChatRequest::new(messages).with_tools(tools);
 
-	let res = client.exec_chat(MODEL.into(), chat_req, Some(&chat_options)).await?;
+	let res = client.exec_chat(MODEL, chat_req, Some(&chat_options)).await?;
 	assert!(!res.contents.is_empty(), "Expected content in response");
 	assert!(matches!(res.contents.first().as_ref().unwrap(), genai::chat::MessageContent::ToolCalls(_)), "Expected tool call when mode is AUTO and prompt triggers tool");
 	if let Some(genai::chat::MessageContent::ToolCalls(tool_calls)) = res.contents.first() {
-		println!("test_chat_function_calling_mode_auto_with_tool_ok - Tool calls: {:?}", tool_calls);
+		println!("test_chat_function_calling_mode_auto_with_tool_ok - Tool calls: {tool_calls:?}");
 	} else {
-		println!("test_chat_function_calling_mode_auto_with_tool_ok - No tool calls, contents: {:?}", res.contents);
+		println!("test_chat_function_calling_mode_auto_with_tool_ok - No tool calls, contents: {res:?}");
 	}
 	Ok(())
 }
@@ -272,7 +272,7 @@ async fn test_chat_function_calling_mode_auto_with_tool_ok() -> Result<()> {
 
 #[tokio::test]
 async fn test_chat_allowed_function_names_ok() -> Result<()> {
-	let client = support::common_client_gemini()?;
+	let client = support::common_client_gemini();
 	let tools = vec![helper_dummy_tool_weather(), helper_dummy_tool_recipe()];
 	let chat_options = ChatOptions::default()
 		.with_allowed_function_names(vec!["get_current_weather".to_string()])
@@ -281,12 +281,12 @@ async fn test_chat_allowed_function_names_ok() -> Result<()> {
 	let messages = vec![ChatMessage::user("What is the weather in Berlin?")];
 	let chat_req = ChatRequest::new(messages).with_tools(tools.clone());
 
-	let res = client.exec_chat(MODEL.into(), chat_req, Some(&chat_options)).await?;
+	let res = client.exec_chat(MODEL, chat_req, Some(&chat_options)).await?;
 	assert!(!res.contents.is_empty(), "Expected content in response");
 	if let Some(genai::chat::MessageContent::ToolCalls(tool_calls)) = res.contents.first() {
 		assert_eq!(tool_calls.len(), 1, "Expected exactly one tool call");
 		assert_eq!(tool_calls[0].fn_name, "get_current_weather", "Expected 'get_current_weather' to be called");
-		println!("test_chat_allowed_function_names_ok (weather) - Tool calls: {:?}", tool_calls);
+		println!("test_chat_allowed_function_names_ok (weather) - Tool calls: {tool_calls:?}");
 	} else {
 		panic!("Expected a tool call for 'get_current_weather', got: {:?}", res.contents);
 	}
@@ -300,11 +300,11 @@ async fn test_chat_allowed_function_names_ok() -> Result<()> {
 	// Ensure `tools` is available; it was cloned for the first request, so original `tools` is still here.
 	let chat_req_recipe = ChatRequest::new(messages_recipe).with_tools(tools.clone());
 	
-	let res_recipe = client.exec_chat(MODEL.into(), chat_req_recipe, Some(&chat_options_recipe_disallowed)).await?;
+	let res_recipe = client.exec_chat(MODEL, chat_req_recipe, Some(&chat_options_recipe_disallowed)).await?;
 	assert!(!res_recipe.contents.is_empty(), "Expected content in response for recipe prompt");
 
 	if let Some(genai::chat::MessageContent::ToolCalls(tool_calls)) = res_recipe.contents.first() {
-		println!("test_chat_allowed_function_names_ok (recipe) - Tool call(s) made: {:?}", tool_calls);
+		println!("test_chat_allowed_function_names_ok (recipe) - Tool call(s) made: {tool_calls:?}");
 		assert!(!tool_calls.is_empty(), "If ToolCalls variant, it should not be empty here based on previous runs.");
 		for tool_call in tool_calls {
 			assert_eq!(tool_call.fn_name, "get_current_weather", 
@@ -312,7 +312,7 @@ async fn test_chat_allowed_function_names_ok() -> Result<()> {
 		}
 	} else {
 		// This case is also acceptable: the model chose not to call any tool.
-		println!("test_chat_allowed_function_names_ok (recipe) - No tool call made (text response): {:?}", res_recipe.contents);
+		println!("test_chat_allowed_function_names_ok (recipe) - No tool call made (text response): {res_recipe:?}");
 		assert!(matches!(res_recipe.contents.first().as_ref().unwrap(), genai::chat::MessageContent::Text(_)), "Expected a text response if no tool call was made.");
 	}
 

@@ -1,4 +1,4 @@
-//! Example demonstrating how to create a conversation with GenAI.
+//! Example demonstrating how to create a conversation with `GenAI`.
 
 use genai::Client;
 use genai::chat::printer::print_chat_stream;
@@ -25,10 +25,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		chat_req = chat_req.append_message(ChatMessage::user(question));
 
 		println!("\n--- Question:\n{question}");
-		let chat_res = client.exec_chat_stream(MODEL, chat_req.clone(), None).await?;
+		let response = client.exec_chat_stream(MODEL, chat_req.clone(), None).await?;
 
 		println!("\n--- Answer: (streaming)");
-		let assistant_answer = print_chat_stream(chat_res, None).await?;
+		let assistant_answer = print_chat_stream(response, None).await?;
 
 		chat_req = chat_req.append_message(ChatMessage::assistant(assistant_answer));
 	}

@@ -6,7 +6,7 @@ use crate::chat::{ChatOptionsSet, Usage};
 use crate::resolver::AuthData;
 use crate::{Error, Result};
 
-pub fn get_api_key(auth: AuthData, model: &ModelIden) -> Result<String> {
+pub fn get_api_key(auth: &AuthData, model: &ModelIden) -> Result<String> {
 	auth.single_key_value().map_err(|resolver_error| Error::Resolver {
 		model_iden: model.clone(),
 		resolver_error,
@@ -24,7 +24,7 @@ pub struct StreamerOptions {
 }
 
 impl StreamerOptions {
-	pub fn new(model_iden: ModelIden, options_set: ChatOptionsSet<'_, '_>) -> Self {
+	pub fn new(model_iden: ModelIden, options_set: &ChatOptionsSet<'_, '_>) -> Self {
 		Self {
 			capture_usage: options_set.capture_usage().unwrap_or(false),
 			capture_content: options_set.capture_content().unwrap_or(false),

@@ -1,4 +1,4 @@
-//! ChatOptions allows customization of a chat request.
+//! `ChatOptions` allows customization of a chat request.
 //! - It can be provided at the `client::exec_chat(..)` level as an argument,
 //! - or set in the client config `client_config.with_chat_options(..)` to be used as the default for all requests
 //!
@@ -8,12 +8,11 @@
 use crate::chat::chat_req_response_format::ChatResponseFormat;
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
-use std::ops::Deref;
 
 /// Chat Options that are considered for any `Client::exec...` calls.
 ///
-/// A fallback `ChatOptions` can also be set at the `Client` during the client builder phase
-/// ``
+/// A fallback `ChatOptions` can also be set at the `Client` during the client builder phase.
+///
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ChatOptions {
 	/// Will be used for this request if the Adapter/provider supports it.
@@ -77,98 +76,116 @@ pub struct ChatOptions {
 /// Chainable Setters
 impl ChatOptions {
 	/// Set the `temperature` for this request.
-	pub fn with_temperature(mut self, value: f64) -> Self {
+	#[must_use]
+	pub const fn with_temperature(mut self, value: f64) -> Self {
 		self.temperature = Some(value);
 		self
 	}
 
 	/// Set the `max_tokens` for this request.
-	pub fn with_max_tokens(mut self, value: u32) -> Self {
+	#[must_use]
+	pub const fn with_max_tokens(mut self, value: u32) -> Self {
 		self.max_tokens = Some(value);
 		self
 	}
 
 	/// Set the `top_p` for this request.
-	pub fn with_top_p(mut self, value: f64) -> Self {
+	#[must_use]
+	pub const fn with_top_p(mut self, value: f64) -> Self {
 		self.top_p = Some(value);
 		self
 	}
 
 	/// Set the `capture_usage` for this request.
-	pub fn with_capture_usage(mut self, value: bool) -> Self {
+	#[must_use]
+	pub const fn with_capture_usage(mut self, value: bool) -> Self {
 		self.capture_usage = Some(value);
 		self
 	}
 
 	/// Set the `capture_content` for this request.
-	pub fn with_capture_content(mut self, value: bool) -> Self {
+	#[must_use]
+	pub const fn with_capture_content(mut self, value: bool) -> Self {
 		self.capture_content = Some(value);
 		self
 	}
 
 	/// Set the `capture_reasoning_content` for this request.
-	pub fn with_capture_reasoning_content(mut self, value: bool) -> Self {
+	#[must_use]
+	pub const fn with_capture_reasoning_content(mut self, value: bool) -> Self {
 		self.capture_reasoning_content = Some(value);
 		self
 	}
 
+	#[must_use]
 	pub fn with_stop_sequences(mut self, values: Vec<String>) -> Self {
 		self.stop_sequences = values;
 		self
 	}
 
-	pub fn with_normalize_reasoning_content(mut self, value: bool) -> Self {
+	#[must_use]
+	pub const fn with_normalize_reasoning_content(mut self, value: bool) -> Self {
 		self.normalize_reasoning_content = Some(value);
 		self
 	}
 
 	/// Set the `response_format` for this request.
+	#[must_use]
 	pub fn with_response_format(mut self, res_format: impl Into<ChatResponseFormat>) -> Self {
 		self.response_format = Some(res_format.into());
 		self
 	}
 
-	pub fn with_reasoning_effort(mut self, value: ReasoningEffort) -> Self {
+	#[must_use]
+	pub const fn with_reasoning_effort(mut self, value: ReasoningEffort) -> Self {
 		self.reasoning_effort = Some(value);
 		self
 	}
 
 	// -- Gemini Specific Option Setters (or other future provider specific advanced options)
-	pub fn with_top_k(mut self, value: i32) -> Self {
+	#[must_use]
+	pub const fn with_top_k(mut self, value: i32) -> Self {
 		self.top_k = Some(value);
 		self
 	}
 
-	pub fn with_seed(mut self, value: i32) -> Self {
+	#[must_use]
+	pub const fn with_seed(mut self, value: i32) -> Self {
 		self.seed = Some(value);
 		self
 	}
 
-	pub fn with_presence_penalty(mut self, value: f32) -> Self {
+	#[must_use]
+	pub const fn with_presence_penalty(mut self, value: f32) -> Self {
 		self.presence_penalty = Some(value);
 		self
 	}
 
-	pub fn with_frequency_penalty(mut self, value: f32) -> Self {
+	#[must_use]
+	pub const fn with_frequency_penalty(mut self, value: f32) -> Self {
 		self.frequency_penalty = Some(value);
 		self
 	}
 
-	pub fn with_candidate_count(mut self, value: i32) -> Self {
+	#[must_use]
+	pub const fn with_candidate_count(mut self, value: i32) -> Self {
 		self.candidate_count = Some(value);
 		self
 	}
 
+	#[must_use]
 	pub fn with_cached_content_id(mut self, value: String) -> Self {
 		self.cached_content_id = Some(value);
 		self
 	}
 
+	#[must_use]
 	pub fn with_function_calling_mode(mut self, value: String) -> Self {
 		self.function_calling_mode = Some(value);
 		self
 	}
 
+	#[must_use]
 	pub fn with_allowed_function_names(mut self, values: Vec<String>) -> Self {
 		self.allowed_function_names = Some(values);
 		self
@@ -180,11 +197,12 @@ impl ChatOptions {
 	///
 	/// IMPORTANT: This is deprecated now; use `with_response_format(ChatResponseFormat::JsonMode)`
 	///
-	/// IMPORTANT: When this is JsonMode, it's important to instruct the model to produce JSON yourself
+	/// IMPORTANT: When this is `JsonMode`, it's important to instruct the model to produce JSON yourself
 	///            for many models/providers to work correctly. This can be approximately done
 	///            by checking if any System and potentially User messages contain `"json"`
 	///            (make sure to check the `.system` property as well).
 	#[deprecated(note = "Use with_response_format(ChatResponseFormat::JsonMode)")]
+	#[must_use]
 	pub fn with_json_mode(mut self, value: bool) -> Self {
 		if value {
 			self.response_format = Some(ChatResponseFormat::JsonMode);
@@ -206,47 +224,51 @@ pub enum ReasoningEffort {
 impl ReasoningEffort {
 	/// Returns the lowercase, static variant name.
 	/// Budget always returns "budget" regardless of the number.
-	pub fn variant_name(&self) -> &'static str {
+	#[must_use]
+	pub const fn variant_name(&self) -> &'static str {
 		match self {
-			ReasoningEffort::Low => "low",
-			ReasoningEffort::Medium => "medium",
-			ReasoningEffort::High => "high",
-			ReasoningEffort::Budget(_) => "budget",
+			Self::Low => "low",
+			Self::Medium => "medium",
+			Self::High => "high",
+			Self::Budget(_) => "budget",
 		}
 	}
 
 	/// Keywords are just the "high", "medium", "low",
 	/// Budget will be None
-	pub fn as_keyword(&self) -> Option<&'static str> {
+	#[must_use]
+	pub const fn as_keyword(&self) -> Option<&'static str> {
 		match self {
-			ReasoningEffort::Low => Some("low"),
-			ReasoningEffort::Medium => Some("medium"),
-			ReasoningEffort::High => Some("high"),
-			ReasoningEffort::Budget(_) => None,
+			Self::Low => Some("low"),
+			Self::Medium => Some("medium"),
+			Self::High => Some("high"),
+			Self::Budget(_) => None,
 		}
 	}
 
 	/// Keywords are just the "high", "medium", "low",
 	/// This function will not create budget variant (no)
+	#[must_use]
 	pub fn from_keyword(name: &str) -> Option<Self> {
 		match name {
-			"low" => Some(ReasoningEffort::Low),
-			"medium" => Some(ReasoningEffort::Medium),
-			"high" => Some(ReasoningEffort::High),
+			"low" => Some(Self::Low),
+			"medium" => Some(Self::Medium),
+			"high" => Some(Self::High),
 			_ => None,
 		}
 	}
 
-	/// If the model_name ends with the lowercase string of a ReasoningEffort variant,
-	/// return the ReasoningEffort and the trimmed model_name.
+	/// If the `model_name` ends with the lowercase string of a `ReasoningEffort` variant,
+	/// return the `ReasoningEffort` and the trimmed `model_name`.
 	///
-	/// Otherwise, return the model_name as is.
+	/// Otherwise, return the `model_name` as is.
 	///
 	/// This will not create budget variant, only the keyword one
-	/// Returns (reasoning_effort, model_name)
+	/// Returns (`reasoning_effort`, `model_name`)
+	#[must_use]
 	pub fn from_model_name(model_name: &str) -> (Option<Self>, &str) {
 		if let Some((prefix, last)) = model_name.rsplit_once('-') {
-			if let Some(effort) = ReasoningEffort::from_keyword(last) {
+			if let Some(effort) = Self::from_keyword(last) {
 				return (Some(effort), prefix);
 			}
 		}
@@ -257,10 +279,10 @@ impl ReasoningEffort {
 impl std::fmt::Display for ReasoningEffort {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			ReasoningEffort::Low => write!(f, "low"),
-			ReasoningEffort::Medium => write!(f, "medium"),
-			ReasoningEffort::High => write!(f, "high"),
-			ReasoningEffort::Budget(n) => write!(f, "{}", n),
+			Self::Low => write!(f, "low"),
+			Self::Medium => write!(f, "medium"),
+			Self::High => write!(f, "high"),
+			Self::Budget(n) => write!(f, "{n}"),
 		}
 	}
 }
@@ -279,91 +301,105 @@ impl std::str::FromStr for ReasoningEffort {
 
 // region:    --- ChatOptionsSet
 
-/// This is an internal crate struct to resolve the ChatOptions value in a cascading manner.
-/// First, it attempts to get the value at the chat level (ChatOptions from the exec_chat...(...) argument).
+/// This is an internal crate struct to resolve the `ChatOptions` value in a cascading manner.
+///
+/// First, it attempts to get the value at the chat level (`ChatOptions` from the `exec_chat`...(...) argument).
 /// If a value for the property is not found, it looks at the client default one.
 #[derive(Default, Clone)]
-pub(crate) struct ChatOptionsSet<'a, 'b> {
+pub struct ChatOptionsSet<'a, 'b> {
 	client: Option<&'a ChatOptions>,
 	chat: Option<&'b ChatOptions>,
 }
 
 impl<'a, 'b> ChatOptionsSet<'a, 'b> {
-	pub fn with_client_options(mut self, options: Option<&'a ChatOptions>) -> Self {
+	#[must_use]
+	pub const fn with_client_options(mut self, options: Option<&'a ChatOptions>) -> Self {
 		self.client = options;
 		self
 	}
-	pub fn with_chat_options(mut self, options: Option<&'b ChatOptions>) -> Self {
+	#[must_use]
+	pub const fn with_chat_options(mut self, options: Option<&'b ChatOptions>) -> Self {
 		self.chat = options;
 		self
 	}
 }
 
 impl ChatOptionsSet<'_, '_> {
+	#[must_use]
 	pub fn temperature(&self) -> Option<f64> {
 		self.chat
 			.and_then(|chat| chat.temperature)
 			.or_else(|| self.client.and_then(|client| client.temperature))
 	}
 
+	#[must_use]
 	pub fn max_tokens(&self) -> Option<u32> {
 		self.chat
 			.and_then(|chat| chat.max_tokens)
 			.or_else(|| self.client.and_then(|client| client.max_tokens))
 	}
 
+	#[must_use]
 	pub fn top_p(&self) -> Option<f64> {
 		self.chat
 			.and_then(|chat| chat.top_p)
 			.or_else(|| self.client.and_then(|client| client.top_p))
 	}
 
+	#[must_use]
 	pub fn stop_sequences(&self) -> &[String] {
 		self.chat
-			.map(|chat| chat.stop_sequences.deref())
-			.or_else(|| self.client.map(|client| client.stop_sequences.deref()))
+			.map(|chat| &*chat.stop_sequences)
+			.or_else(|| self.client.map(|client| &*client.stop_sequences))
 			.unwrap_or(&[])
 	}
 
+	#[must_use]
 	pub fn capture_usage(&self) -> Option<bool> {
 		self.chat
 			.and_then(|chat| chat.capture_usage)
 			.or_else(|| self.client.and_then(|client| client.capture_usage))
 	}
 
+	#[must_use]
 	pub fn capture_content(&self) -> Option<bool> {
 		self.chat
 			.and_then(|chat| chat.capture_content)
 			.or_else(|| self.client.and_then(|client| client.capture_content))
 	}
 
+	#[must_use]
 	pub fn capture_reasoning_content(&self) -> Option<bool> {
 		self.chat
 			.and_then(|chat| chat.capture_reasoning_content)
 			.or_else(|| self.client.and_then(|client| client.capture_reasoning_content))
 	}
 
+	#[must_use]
 	pub fn response_format(&self) -> Option<&ChatResponseFormat> {
 		self.chat
 			.and_then(|chat| chat.response_format.as_ref())
 			.or_else(|| self.client.and_then(|client| client.response_format.as_ref()))
 	}
 
+	#[must_use]
 	pub fn normalize_reasoning_content(&self) -> Option<bool> {
 		self.chat
 			.and_then(|chat| chat.normalize_reasoning_content)
 			.or_else(|| self.client.and_then(|client| client.normalize_reasoning_content))
 	}
 
+	#[must_use]
 	pub fn reasoning_effort(&self) -> Option<&ReasoningEffort> {
 		self.chat
 			.and_then(|chat| chat.reasoning_effort.as_ref())
 			.or_else(|| self.client.and_then(|client| client.reasoning_effort.as_ref()))
 	}
 
-	/// Returns true only if there is a ChatResponseFormat::JsonMode
+	/// Returns true only if there is a `ChatResponseFormat::JsonMode`
 	#[deprecated(note = "Use .response_format()")]
 	#[allow(unused)]
+	#[must_use]
 	pub fn json_mode(&self) -> Option<bool> {
 		match self.response_format() {
 			Some(ChatResponseFormat::JsonMode) => Some(true),
@@ -373,48 +409,56 @@ impl ChatOptionsSet<'_, '_> {
 	}
 
 	// -- Gemini Specific Option Accessors (or other future provider specific advanced options)
+	#[must_use]
 	pub fn top_k(&self) -> Option<i32> {
 		self.chat
 			.and_then(|chat| chat.top_k)
 			.or_else(|| self.client.and_then(|client| client.top_k))
 	}
 
+	#[must_use]
 	pub fn seed(&self) -> Option<i32> {
 		self.chat
 			.and_then(|chat| chat.seed)
 			.or_else(|| self.client.and_then(|client| client.seed))
 	}
 
+	#[must_use]
 	pub fn presence_penalty(&self) -> Option<f32> {
 		self.chat
 			.and_then(|chat| chat.presence_penalty)
 			.or_else(|| self.client.and_then(|client| client.presence_penalty))
 	}
 
+	#[must_use]
 	pub fn frequency_penalty(&self) -> Option<f32> {
 		self.chat
 			.and_then(|chat| chat.frequency_penalty)
 			.or_else(|| self.client.and_then(|client| client.frequency_penalty))
 	}
 
+	#[must_use]
 	pub fn candidate_count(&self) -> Option<i32> {
 		self.chat
 			.and_then(|chat| chat.candidate_count)
 			.or_else(|| self.client.and_then(|client| client.candidate_count))
 	}
 
+	#[must_use]
 	pub fn cached_content_id(&self) -> Option<&String> {
 		self.chat
 			.and_then(|chat| chat.cached_content_id.as_ref())
 			.or_else(|| self.client.and_then(|client| client.cached_content_id.as_ref()))
 	}
 
+	#[must_use]
 	pub fn function_calling_mode(&self) -> Option<&String> {
 		self.chat
 			.and_then(|chat| chat.function_calling_mode.as_ref())
 			.or_else(|| self.client.and_then(|client| client.function_calling_mode.as_ref()))
 	}
 
+	#[must_use]
 	pub fn allowed_function_names(&self) -> Option<&Vec<String>> {
 		self.chat
 			.and_then(|chat| chat.allowed_function_names.as_ref())

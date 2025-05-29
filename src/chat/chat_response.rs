@@ -1,4 +1,4 @@
-//! This module contains all the types related to a Chat Response (except ChatStream, which has its own file).
+//! This module contains all the types related to a Chat Response (except `ChatStream`, which has its own file).
 
 use serde::{Deserialize, Serialize};
 
@@ -24,7 +24,7 @@ pub struct ChatResponse {
 	pub model_iden: ModelIden,
 
 	/// The provider model iden. Will be `model_iden` if not returned or mapped, but can be different.
-	/// For example, `gpt-4o` model_iden might have a provider_model_iden as `gpt-4o-2024-08-06`
+	/// For example, `gpt-4o` `model_iden` might have a `provider_model_iden` as `gpt-4o-2024-08-06`
 	pub provider_model_iden: ModelIden,
 
 	// pub model
@@ -40,14 +40,15 @@ impl ChatResponse {
 		self.contents.first().and_then(MessageContent::text_as_str)
 	}
 
-	/// Consumes the ChatResponse and returns the eventual String content of the `MessageContent::Text`
+	/// Consumes the `ChatResponse` and returns the eventual String content of the `MessageContent::Text`
 	/// from the first candidate. Otherwise, returns None.
 	pub fn first_content_text_into_string(mut self) -> Option<String> {
 		self.contents.drain(..).next().and_then(MessageContent::text_into_string)
 	}
 
-	/// Returns a Vec of ToolCall references from the first candidate if its content is ToolCalls.
+	/// Returns a Vec of `ToolCall` references from the first candidate if its content is `ToolCalls`.
 	/// Otherwise, returns None.
+	#[must_use]
 	pub fn first_tool_calls(&self) -> Option<Vec<&ToolCall>> {
 		if let Some(MessageContent::ToolCalls(tool_calls)) = self.contents.first().as_ref() {
 			Some(tool_calls.iter().collect())
@@ -56,8 +57,9 @@ impl ChatResponse {
 		}
 	}
 
-	/// Consumes the ChatResponse and returns the `Vec<ToolCall>` from the first candidate
-	/// if its content is ToolCalls. Otherwise, returns None.
+	/// Consumes the `ChatResponse` and returns the `Vec<ToolCall>` from the first candidate
+	/// if its content is `ToolCalls`. Otherwise, returns None.
+	#[must_use]
 	pub fn first_into_tool_calls(mut self) -> Option<Vec<ToolCall>> {
 		if let Some(MessageContent::ToolCalls(tool_calls)) = self.contents.drain(..).next() {
 			Some(tool_calls)

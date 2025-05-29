@@ -33,9 +33,9 @@ bitflags::bitflags! {
 	#[derive(Clone)]
 	pub struct Check: u8 {
 		/// Check if the
-		const REASONING       = 0b00000001;
-		const REASONING_USAGE = 0b00000010;
-		const USAGE           = 0b00000100;
+		const REASONING       = 0b0000_0001;
+		const REASONING_USAGE = 0b0000_0010;
+		const USAGE           = 0b0000_0100;
 	}
 }
 
@@ -44,11 +44,11 @@ impl std::fmt::Debug for Check {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		let mut buffer = String::new();
 		to_writer(self, &mut buffer).unwrap();
-		write!(f, "{}", buffer)
+		write!(f, "{buffer}")
 	}
 }
 
-pub fn contains_checks(checks: Option<Check>, matching_check: Check) -> bool {
+pub const fn contains_checks(checks: Option<Check>, matching_check: Check) -> bool {
 	let Some(checks) = checks else { return false };
 
 	checks.contains(matching_check)
@@ -60,7 +60,7 @@ pub fn validate_checks(checks: Option<Check>, valid_flags: Check) -> Result<()> 
 
 	let unsupported = checks - valid_flags;
 	if !unsupported.is_empty() {
-		return Err(format!("Unsupported flags passed for this test: {:?}", unsupported).into());
+		return Err(format!("Unsupported flags passed for this test: {unsupported:?}").into());
 	}
 
 	Ok(())

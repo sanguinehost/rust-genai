@@ -67,12 +67,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		println!("\n--- Question:\n{question}");
 
 		println!("\n--- Answer:");
-		let chat_res = client.exec_chat(model, chat_req.clone(), None).await?;
-		println!("{}", chat_res.content_text_as_str().unwrap_or("NO ANSWER"));
+		let response = client.exec_chat(model, chat_req.clone(), None).await?;
+		println!("{}", response.first_content_text_as_str().unwrap_or("NO ANSWER"));
 
 		println!("\n--- Answer: (streaming)");
-		let chat_res = client.exec_chat_stream(model, chat_req.clone(), None).await?;
-		print_chat_stream(chat_res, Some(&print_options)).await?;
+		let response = client.exec_chat_stream(model, chat_req.clone(), None).await?;
+		print_chat_stream(response, Some(&print_options)).await?;
 
 		println!();
 	}

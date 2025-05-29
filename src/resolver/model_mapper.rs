@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 // region:    --- ModelMapper
 
-/// A ModelMapper for mapping a resolved `ModelIden` (i.e. AdapterKind + ModelName) to another one.
+/// A `ModelMapper` for mapping a resolved `ModelIden` (i.e. `AdapterKind` + `ModelName`) to another one.
 /// It must return a `ModelIden` or an appropriate result.
 #[derive(Debug, Clone)]
 pub enum ModelMapper {
@@ -15,14 +15,14 @@ pub enum ModelMapper {
 impl ModelMapper {
 	/// Create a new `ModelMapper` from a mapper function.
 	pub fn from_mapper_fn(mapper_fn: impl IntoModelMapperFn) -> Self {
-		ModelMapper::MapperFn(mapper_fn.into_mapper_fn())
+		Self::MapperFn(mapper_fn.into_mapper_fn())
 	}
 }
 
 impl ModelMapper {
 	pub(crate) fn map_model(&self, model_iden: ModelIden) -> Result<ModelIden> {
 		match self {
-			ModelMapper::MapperFn(mapper_fn) => {
+			Self::MapperFn(mapper_fn) => {
 				// Clone the Arc to get a new reference to the Box, then call exec_fn.
 				mapper_fn.clone().exec_fn(model_iden)
 			}
@@ -59,8 +59,8 @@ where
 
 // Implement Clone for Box<dyn ModelMapperFn>
 impl Clone for Box<dyn ModelMapperFn> {
-	fn clone(&self) -> Box<dyn ModelMapperFn> {
-		self.clone_box()
+	fn clone(&self) -> Self {
+	    self.clone_box()
 	}
 }
 
@@ -74,7 +74,7 @@ impl std::fmt::Debug for dyn ModelMapperFn {
 
 // region:    --- IntoModelMapperFn
 
-/// Implement IntoModelMapperFn for closures used as arguments in `ModelMapper::from_mapper_fn`.
+/// Implement `IntoModelMapperFn` for closures used as arguments in `ModelMapper::from_mapper_fn`.
 pub trait IntoModelMapperFn {
 	/// Convert the given closure into a `ModelMapperFn` trait object.
 	fn into_mapper_fn(self) -> Arc<Box<dyn ModelMapperFn>>;

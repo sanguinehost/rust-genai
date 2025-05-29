@@ -50,11 +50,11 @@ impl Adapter for GeminiAdapter {
 
 	/// Note: For now, this returns the common models (see above)
 	async fn all_model_names(_kind: AdapterKind) -> Result<Vec<String>> {
-		Ok(MODELS.iter().map(|s| s.to_string()).collect())
+		Ok(MODELS.iter().map(ToString::to_string).collect())
 	}
 
-	/// NOTE: As Google Gemini has decided to put their API_KEY in the URL,
-	///       this will return the URL without the API_KEY in it. The API_KEY will need to be added by the caller.
+	/// NOTE: As Google Gemini has decided to put their `API_KEY` in the URL,
+	///       this will return the URL without the `API_KEY` in it. The `API_KEY` will need to be added by the caller.
 	fn get_service_url(model: &ModelIden, service_type: ServiceType, endpoint: Endpoint) -> String {
 		let base_url = endpoint.base_url();
 		let model_name = model.model_name.clone();
@@ -64,6 +64,7 @@ impl Adapter for GeminiAdapter {
 		}
 	}
 
+	#[allow(clippy::too_many_lines)]
 	fn to_web_request_data(
 		target: ServiceTarget,
 		service_type: ServiceType,
@@ -73,7 +74,7 @@ impl Adapter for GeminiAdapter {
 		let ServiceTarget { endpoint, auth, model } = target;
 
 		// -- api_key
-		let api_key = get_api_key(auth, &model)?;
+		let api_key = get_api_key(&auth, &model)?;
 
 		// -- Reasoning Budget
 		let (model, reasoning_effort) = match (model, options_set.reasoning_effort()) {
@@ -255,15 +256,15 @@ impl Adapter for GeminiAdapter {
 		let provider_model_name: Option<String> = body.x_remove("modelVersion").ok();
 		let provider_model_iden = model_iden.from_optional_name(provider_model_name);
 
-		let gemini_response = Self::body_to_gemini_chat_response(&model_iden.clone(), body)?;
+		let gemini_response = Self::body_to_gemini_chat_response(&model_iden, body)?;
 		let GeminiChatResponse { contents, usage } = gemini_response;
 
 		// Map Vec<GeminiChatContent> to Vec<MessageContent>
 		let response_contents: Vec<MessageContent> = contents
 			.into_iter()
-			.filter_map(|gemini_content| match gemini_content {
-				GeminiChatContent::Text(text) => Some(MessageContent::from_text(text)),
-				GeminiChatContent::ToolCall(tool_call) => Some(MessageContent::from_tool_calls(vec![tool_call])),
+			.map(|gemini_content| match gemini_content {
+				GeminiChatContent::Text(text) => MessageContent::from_text(text),
+				GeminiChatContent::ToolCall(tool_call) => MessageContent::from_tool_calls(vec![tool_call]),
 			})
 			.collect();
 
@@ -287,7 +288,7 @@ impl Adapter for GeminiAdapter {
 	) -> Result<ChatStreamResponse> {
 		let web_stream = WebStream::new_with_pretty_json_array(reqwest_builder);
 
-		let gemini_stream = GeminiStreamer::new(web_stream, model_iden.clone(), options_set);
+		let gemini_stream = GeminiStreamer::new(web_stream, model_iden.clone(), &options_set);
 		let chat_stream = ChatStream::from_inter_stream(gemini_stream);
 
 		Ok(ChatStreamResponse {
@@ -299,7 +300,7 @@ impl Adapter for GeminiAdapter {
 
 // region:    --- Support
 
-/// Support functions for GeminiAdapter
+/// Support functions for `GeminiAdapter`
 impl GeminiAdapter {
 	pub(super) fn body_to_gemini_chat_response(model_iden: &ModelIden, mut body: Value) -> Result<GeminiChatResponse> {
 		// If the body has an `error` property, then it is assumed to be an error.
@@ -319,18 +320,15 @@ impl GeminiAdapter {
 			// Assuming content is in /content/parts/0 as before for each candidate
 			match candidate_json.x_take::<Value>("/content/parts/0") {
 				Ok(mut response_part) => {
-					let content = match response_part.x_take::<Value>("functionCall") {
-						Ok(f) => Some(GeminiChatContent::ToolCall(ToolCall {
-							call_id: f.x_get("name").unwrap_or_else(|_| "".to_string()), 
-							fn_name: f.x_get("name").unwrap_or_else(|_| "".to_string()),
-							fn_arguments: f.x_get("args").unwrap_or(Value::Null),
-						})),
-						Err(_) => response_part
+					let content = response_part.x_take::<Value>("functionCall").map_or_else(|_| response_part
 							.x_take::<Value>("text")
 							.ok()
 							.and_then(|v| v.as_str().map(String::from))
-							.map(GeminiChatContent::Text),
-					};
+							.map(GeminiChatContent::Text), |f| Some(GeminiChatContent::ToolCall(ToolCall {
+							call_id: f.x_get("name").unwrap_or_else(|_| String::new()),
+							fn_name: f.x_get("name").unwrap_or_else(|_| String::new()),
+							fn_arguments: f.x_get("args").unwrap_or(Value::Null),
+						})));
 					if let Some(content_item) = content {
 						gemini_contents.push(content_item);
 					}
@@ -338,7 +336,7 @@ impl GeminiAdapter {
 				Err(e) => {
 					// Log or handle error if a candidate has no processable content part
 					// For now, we can skip this candidate or return an error
-					println!("Warning: Could not process content for a candidate: {:?}. Error: {}", candidate_json, e);
+					println!("Warning: Could not process content for a candidate: {candidate_json:?}. Error: {e}");
 				}
 			}
 		}
@@ -349,7 +347,7 @@ impl GeminiAdapter {
 		Ok(GeminiChatResponse { contents: gemini_contents, usage })
 	}
 
-	/// See gemini doc: https://ai.google.dev/api/generate-content#UsageMetadata
+	/// See gemini doc: <https://ai.google.dev/api/generate-content#UsageMetadata>
 	pub(super) fn into_usage(mut usage_value: Value) -> Usage {
 		let total_tokens: Option<i32> = usage_value.x_take("totalTokenCount").ok();
 
@@ -420,11 +418,12 @@ impl GeminiAdapter {
 		}
 	}
 
-	/// Takes the genai ChatMessages and builds the System string and JSON Messages for Gemini.
+	/// Takes the genai `ChatMessages` and builds the System string and JSON Messages for Gemini.
 	/// - Role mapping `ChatRole:User -> role: "user"`, `ChatRole::Assistant -> role: "model"`
 	/// - `ChatRole::System` is concatenated (with an empty line) into a single `system` for the system instruction.
 	///   - This adapter uses version v1beta, which supports `systemInstruction`
 	/// - The eventual `chat_req.system` is pushed first into the "systemInstruction"
+	#[allow(clippy::too_many_lines)]
 	fn into_gemini_request_parts(model_iden: ModelIden, chat_req: ChatRequest) -> Result<GeminiChatRequestParts> {
 		let mut contents: Vec<Value> = Vec::new();
 		let mut systems: Vec<String> = Vec::new();
@@ -444,7 +443,7 @@ impl GeminiAdapter {
 							cause: "Only MessageContent::Text supported for this model (for now)",
 						});
 					};
-					systems.push(content)
+					systems.push(content);
 				}
 				ChatRole::User => {
 					let content = match msg.content {
@@ -515,7 +514,7 @@ impl GeminiAdapter {
 				ChatRole::Assistant => {
 					match msg.content {
 						MessageContent::Text(content) => {
-							contents.push(json!({"role": "model", "parts": [{"text": content}]}))
+							contents.push(json!({"role": "model", "parts": [{"text": content}]}));
 						}
 						MessageContent::ToolCalls(tool_calls) => contents.push(json!({
 							"role": "model",
@@ -587,10 +586,10 @@ impl GeminiAdapter {
 			}
 		}
 
-		let system = if !systems.is_empty() {
-			Some(systems.join("\n"))
-		} else {
+		let system = if systems.is_empty() {
 			None
+		} else {
+			Some(systems.join("\n"))
 		};
 
 		let tools = chat_req.tools.map(|tools| {

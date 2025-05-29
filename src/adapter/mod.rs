@@ -1,4 +1,5 @@
 //! The Adapter layer allows adapting client requests/responses to various AI providers.
+//!
 //! Currently, it employs a static dispatch pattern with the `Adapter` trait and `AdapterDispatcher` implementation.
 //! Adapter implementations are organized by adapter type under the `adapters` submodule.
 //!
@@ -15,7 +16,7 @@ mod adapters;
 mod dispatcher;
 
 // -- Flatten (private, crate, public)
-use adapters::*;
+use adapters::{anthropic, cohere, deepseek, gemini, groq, ollama, openai, xai};
 
 pub(crate) use adapter_types::*;
 pub(crate) use dispatcher::*;

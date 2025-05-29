@@ -1,8 +1,8 @@
-//! This example demonstrates how to use a custom ServiceTargetResolver which gives full control over the final
-//! mapping for Endpoint, Model/AdapterKind, and Auth.
+//! This example demonstrates how to use a custom `ServiceTargetResolver` which gives full control over the final
+//! mapping for `Endpoint`, `Model`/`AdapterKind`, and `Auth`.
 //!
-//! IMPORTANT - Here we are using xAI as an example of a custom ServiceTarget.
-//!             However, there is now an XaiAdapter, which gets activated on `starts_with("grok")`.
+//! IMPORTANT - Here we are using xAI as an example of a custom `ServiceTarget`.
+//!             However, there is now an `XaiAdapter`, which gets activated on `starts_with("grok")`.
 
 use genai::adapter::AdapterKind;
 use genai::chat::{ChatMessage, ChatRequest};
@@ -42,10 +42,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		chat_req = chat_req.append_message(ChatMessage::user(question));
 
 		println!("\n--- Question:\n{question}");
-		let chat_res = client.exec_chat(MODEL, chat_req.clone(), None).await?;
+		let response = client.exec_chat(MODEL, chat_req.clone(), None).await?;
 
 		println!("\n--- Answer: ");
-		let assistant_answer = chat_res.content_text_as_str().ok_or("Should have response")?;
+		let assistant_answer = response.first_content_text_as_str().ok_or("Should have response")?;
 		println!("{assistant_answer}");
 
 		chat_req = chat_req.append_message(ChatMessage::assistant(assistant_answer));

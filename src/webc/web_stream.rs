@@ -7,7 +7,7 @@ use std::error::Error;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-/// WebStream is a simple web stream implementation that splits the stream messages by a given delimiter.
+/// `WebStream` is a simple web stream implementation that splits the stream messages by a given delimiter.
 /// - It is intended to be a pragmatic solution for services that do not adhere to the `text/event-stream` format and content type.
 /// - For providers that support the standard `text/event-stream`, `genai` uses the `reqwest-eventsource`/`eventsource-stream` crates.
 /// - This stream item is just a `String` and has different stream modes that define the message delimiter strategy (without any event typing).
@@ -97,10 +97,10 @@ impl Stream for WebStream {
 						// -- Iterate through the parts
 						let buff_response = match this.stream_mode {
 							StreamMode::Delimiter(delimiter) => {
-								process_buff_string_delimited(buff_string, &mut this.partial_message, delimiter)
+								process_buff_string_delimited(&buff_string, &mut this.partial_message, delimiter)
 							}
 							StreamMode::PrettyJsonArray => {
-								new_with_pretty_json_array(buff_string, &mut this.partial_message)
+								new_with_pretty_json_array(&buff_string, &mut this.partial_message)
 							}
 						};
 
@@ -108,7 +108,7 @@ impl Stream for WebStream {
 							mut first_message,
 							next_messages,
 							candidate_message,
-						} = buff_response?;
+						} = buff_response;
 
 						// -- Add next_messages as remaining messages if present
 						if let Some(next_messages) = next_messages {
@@ -127,9 +127,8 @@ impl Stream for WebStream {
 						// -- If we have a first message, we have to send it.
 						if let Some(first_message) = first_message.take() {
 							return Poll::Ready(Some(Ok(first_message)));
-						} else {
-							continue;
 						}
+						continue;
 					}
 					Poll::Ready(Some(Err(e))) => return Poll::Ready(Some(Err(e))),
 					Poll::Ready(None) => {
@@ -161,38 +160,36 @@ struct BuffResponse {
 	candidate_message: Option<String>,
 }
 
-/// Process a string buffer for the pretty_json_array (for Gemini)
+/// Process a string buffer for the `pretty_json_array` (for Gemini)
 /// It will split the messages as follows:
 /// - If it starts with `[`, then the message will be `[`
 /// - Then, each main JSON object (from the first `{` to the last `}`) will become a message
 /// - Main JSON object `,` delimiter will be skipped
 /// - The ending `]` will be sent as a `]` message as well.
 ///
-/// IMPORTANT: Right now, it assumes each buff_string will contain the full main JSON object
+/// IMPORTANT: Right now, it assumes each `buff_string` will contain the full main JSON object
 ///            for each array item (which seems to be the case with Gemini).
 ///            This probably needs to be made more robust later.
 fn new_with_pretty_json_array(
-	buff_string: String,
+	buff_string: &str,
 	_partial_message: &mut Option<String>,
-) -> Result<BuffResponse, crate::Error> {
+) -> BuffResponse {
 	let buff_str = buff_string.trim();
 
 	let mut messages: Vec<String> = Vec::new();
 
 	// -- Capture the array start/end and each eventual sub-object (assuming only one sub-object)
-	let (array_start, rest_str) = match buff_str.strip_prefix('[') {
-		Some(rest) => (Some("["), rest.trim()),
-		None => (None, buff_str),
-	};
+	let (array_start, rest_str) = buff_str
+		.strip_prefix('[')
+		.map_or((None, buff_str), |rest| (Some("["), rest.trim()));
 
 	// Remove the eventual ',' prefix and suffix.
 	let rest_str = rest_str.strip_prefix(',').unwrap_or(rest_str);
 	let rest_str = rest_str.strip_suffix(',').unwrap_or(rest_str);
 
-	let (rest_str, array_end) = match rest_str.strip_suffix(']') {
-		Some(rest) => (rest.trim(), Some("]")),
-		None => (rest_str, None),
-	};
+	let (rest_str, array_end) = rest_str
+		.strip_suffix(']')
+		.map_or((rest_str, None), |rest| (rest.trim(), Some("]")));
 
 	// -- Prep the BuffResponse
 	if let Some(array_start) = array_start {
@@ -207,10 +204,10 @@ fn new_with_pretty_json_array(
 	}
 
 	// -- Return the buff response
-	let first_message = if !messages.is_empty() {
-		Some(messages[0].to_string())
-	} else {
+	let first_message = if messages.is_empty() {
 		None
+	} else {
+		Some(messages[0].to_string())
 	};
 
 	let next_messages = if messages.len() > 1 {
@@ -219,19 +216,19 @@ fn new_with_pretty_json_array(
 		None
 	};
 
-	Ok(BuffResponse {
+	BuffResponse {
 		first_message,
 		next_messages,
 		candidate_message: None,
-	})
+	}
 }
 
 /// Process a string buffer for the delimited mode (e.g., Cohere)
 fn process_buff_string_delimited(
-	buff_string: String,
+	buff_string: &str,
 	partial_message: &mut Option<String>,
 	delimiter: &str,
-) -> Result<BuffResponse, crate::Error> {
+) -> BuffResponse {
 	let mut first_message: Option<String> = None;
 	let mut candidate_message: Option<String> = None;
 	let mut next_messages: Option<Vec<String>> = None;
@@ -242,15 +239,14 @@ fn process_buff_string_delimited(
 		// If we already have a candidate, the candidate becomes the message
 		if let Some(candidate_message) = candidate_message.take() {
 			// If candidate is empty, we skip
-			if !candidate_message.is_empty() {
-				let message = candidate_message.to_string();
-				if first_message.is_none() {
-					first_message = Some(message);
-				} else {
-					next_messages.get_or_insert_with(Vec::new).push(message);
-				}
-			} else {
+			if candidate_message.is_empty() {
 				continue;
+			}
+			let message = candidate_message.to_string();
+			if first_message.is_none() {
+				first_message = Some(message);
+			} else {
+				next_messages.get_or_insert_with(Vec::new).push(message);
 			}
 		} else {
 			// And then, this part becomes the candidate
@@ -262,9 +258,9 @@ fn process_buff_string_delimited(
 		}
 	}
 
-	Ok(BuffResponse {
+	BuffResponse {
 		first_message,
 		next_messages,
 		candidate_message,
-	})
+	}
 }

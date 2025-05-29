@@ -1,9 +1,9 @@
 use gcp_auth::{CustomServiceAccount, TokenProvider};
-use genai::Client;
-use genai::ModelIden;
 use genai::chat::printer::print_chat_stream;
 use genai::chat::{ChatMessage, ChatRequest};
 use genai::resolver::{AuthData, AuthResolver};
+use genai::{Client, ModelIden};
+use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -30,7 +30,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 				.token(scopes)
 				.await
 				.map_err(|e| genai::resolver::Error::Custom(e.to_string()))?;
-			let location = std::env::var("GCP_LOCATION").unwrap_or("us-central1".to_string());
+			let location = std::env::var("GCP_LOCATION").unwrap_or_else(|_| "us-central1".to_string());
 			let project_id = account.project_id().ok_or_else(|| {
 				genai::resolver::Error::Custom("GCP Auth: Service account has no project_id".to_string())
 			})?;

@@ -12,17 +12,18 @@ pub struct WebClient {
 // Implements Default
 impl Default for WebClient {
 	fn default() -> Self {
-		WebClient {
-			reqwest_client: reqwest::Client::new(),
+		Self {
+		    reqwest_client: reqwest::Client::new(),
 		}
-	}
+}
 }
 
 // region:    --- Constructors
 
 impl WebClient {
-	pub fn from_reqwest_client(reqwest_client: reqwest::Client) -> Self {
-		WebClient { reqwest_client }
+	#[must_use]
+	pub const fn from_reqwest_client(reqwest_client: reqwest::Client) -> Self {
+	    Self { reqwest_client }
 	}
 }
 
@@ -34,7 +35,7 @@ impl WebClient {
 	pub async fn do_get(&self, url: &str, headers: &[(String, String)]) -> Result<WebResponse> {
 		let mut reqwest_builder = self.reqwest_client.request(Method::GET, url);
 
-		for (k, v) in headers.iter() {
+		for (k, v) in headers {
 			reqwest_builder = reqwest_builder.header(k, v);
 		}
 		let reqwest_res = reqwest_builder.send().await?;
@@ -45,7 +46,7 @@ impl WebClient {
 	}
 
 	pub async fn do_post(&self, url: &str, headers: &[(String, String)], content: Value) -> Result<WebResponse> {
-		let reqwest_builder = self.new_req_builder(url, headers, content)?;
+		let reqwest_builder = self.new_req_builder(url, headers, &content);
 
 		let reqwest_res = reqwest_builder.send().await?;
 
@@ -54,16 +55,14 @@ impl WebClient {
 		Ok(response)
 	}
 
-	pub fn new_req_builder(&self, url: &str, headers: &[(String, String)], content: Value) -> Result<RequestBuilder> {
+	pub fn new_req_builder(&self, url: &str, headers: &[(String, String)], content: &Value) -> RequestBuilder {
 		let method = Method::POST;
 
 		let mut reqwest_builder = self.reqwest_client.request(method, url);
-		for (k, v) in headers.iter() {
+		for (k, v) in headers {
 			reqwest_builder = reqwest_builder.header(k, v);
 		}
-		reqwest_builder = reqwest_builder.json(&content);
-
-		Ok(reqwest_builder)
+		reqwest_builder.json(content)
 	}
 }
 // endregion: --- Web Method Implementation
@@ -82,10 +81,10 @@ pub struct WebResponse {
 
 impl WebResponse {
 	/// Note 1: For now, assume only a JSON response.
-	/// Note 2: Currently, the WebResponse holds a Value (parsed from the entire body), and then the caller
+	/// Note 2: Currently, the `WebResponse` holds a Value (parsed from the entire body), and then the caller
 	///         can cherry-pick/deserialize further. In the future, we might consider returning `body: String`
 	///         to enable more optimized parsing, allowing for selective parsing constrained by the structure.
-	pub(crate) async fn from_reqwest_response(mut res: reqwest::Response) -> Result<WebResponse> {
+	pub(crate) async fn from_reqwest_response(mut res: reqwest::Response) -> Result<Self> {
 		let status = res.status();
 
 		if !status.is_success() {
@@ -95,7 +94,7 @@ impl WebResponse {
 
 		// Move the headers into a new HeaderMap
 		let headers = res.headers_mut().drain().filter_map(|(n, v)| n.map(|n| (n, v)));
-		let header_map = HeaderMap::from_iter(headers);
+		let header_map = headers.into_iter().collect::<HeaderMap<_>>();
 
 		// Capture the body
 		let ct = header_map.get("content-type").and_then(|v| v.to_str().ok()).unwrap_or_default();
@@ -107,7 +106,7 @@ impl WebResponse {
 			});
 		};
 
-		Ok(WebResponse { status, body })
+		Ok(Self { status, body })
 	}
 }
 

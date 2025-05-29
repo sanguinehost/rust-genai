@@ -15,18 +15,18 @@ pub struct CohereStreamer {
 	options: StreamerOptions,
 
 	// -- Set by the poll_next
-	/// Flag to prevent polling the EventSource after a MessageStop event
+	/// Flag to prevent polling the `EventSource` after a `MessageStop` event
 	done: bool,
 	captured_data: StreamerCapturedData,
 }
 
 impl CohereStreamer {
-	pub fn new(inner: WebStream, model_iden: ModelIden, options_set: ChatOptionsSet<'_, '_>) -> Self {
+	pub fn new(inner: WebStream, model_iden: ModelIden, options_set: &ChatOptionsSet<'_, '_>) -> Self {
 		Self {
 			inner,
 			done: false,
 			options: StreamerOptions::new(model_iden, options_set),
-			captured_data: Default::default(),
+			captured_data: StreamerCapturedData::default(),
 		}
 	}
 }
@@ -104,9 +104,9 @@ impl futures::Stream for CohereStreamer {
 									};
 
 									let inter_stream_end = InterStreamEnd {
-										captured_usage,
-										captured_content: self.captured_data.content.take(),
-										captured_reasoning_content: self.captured_data.reasoning_content.take(),
+										usage: captured_usage,
+										content: self.captured_data.content.take(),
+										reasoning_content: self.captured_data.reasoning_content.take(),
 									};
 
 									InterStreamEvent::End(inter_stream_end)

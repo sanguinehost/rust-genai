@@ -1,5 +1,5 @@
-//! This example shows how to use a custom AdapterKindResolver to have some custom
-//! mapping from a model name to an AdapterKind.
+//! This example shows how to use a custom `AdapterKindResolver` to have some custom
+//! mapping from a model name to an `AdapterKind`.
 //! This allows mapping missing models to their Adapter implementations.
 
 use genai::chat::printer::print_chat_stream;
@@ -36,11 +36,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 	// -- Execute and print
 	println!("\n--- Question:\n{question}");
-	let chat_res = client.exec_chat_stream(MODEL, chat_req.clone(), Some(&options)).await?;
+	let response = client.exec_chat_stream(MODEL, chat_req.clone(), Some(&options)).await?;
 
 	let adapter_kind = client.resolve_service_target(MODEL).await?.model.adapter_kind;
 	println!("\n--- Answer: ({MODEL} - {adapter_kind})");
-	print_chat_stream(chat_res, None).await?;
+	print_chat_stream(response, None).await?;
 
 	Ok(())
 }

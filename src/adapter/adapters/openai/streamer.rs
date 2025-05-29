@@ -15,19 +15,19 @@ pub struct OpenAIStreamer {
 	options: StreamerOptions,
 
 	// -- Set by the poll_next
-	/// Flag to prevent polling the EventSource after a MessageStop event
+	/// Flag to prevent polling the `EventSource` after a `MessageStop` event
 	done: bool,
 	captured_data: StreamerCapturedData,
 }
 
 impl OpenAIStreamer {
 	// TODO: Problem - need the ChatOptions `.capture_content` and `.capture_usage`
-	pub fn new(inner: EventSource, model_iden: ModelIden, options_set: ChatOptionsSet<'_, '_>) -> Self {
+	pub fn new(inner: EventSource, model_iden: ModelIden, options_set: &ChatOptionsSet<'_, '_>) -> Self {
 		Self {
 			inner,
 			done: false,
 			options: StreamerOptions::new(model_iden, options_set),
-			captured_data: Default::default(),
+			captured_data: StreamerCapturedData::default(),
 		}
 	}
 }
@@ -59,9 +59,9 @@ impl futures::Stream for OpenAIStreamer {
 						};
 
 						let inter_stream_end = InterStreamEnd {
-							captured_usage,
-							captured_content: self.captured_data.content.take(),
-							captured_reasoning_content: self.captured_data.reasoning_content.take(),
+							usage: captured_usage,
+							content: self.captured_data.content.take(),
+							reasoning_content: self.captured_data.reasoning_content.take(),
 						};
 
 						return Poll::Ready(Some(Ok(InterStreamEvent::End(inter_stream_end))));
@@ -95,14 +95,14 @@ impl futures::Stream for OpenAIStreamer {
 											.x_take("/x_groq/usage")
 											.map(|v| OpenAIAdapter::into_usage(adapter_kind, v))
 											.unwrap_or_default(); // permissive for now
-										self.captured_data.usage = Some(usage)
+										self.captured_data.usage = Some(usage);
 									}
 									AdapterKind::DeepSeek => {
 										let usage = message_data
 											.x_take("usage")
 											.map(|v| OpenAIAdapter::into_usage(adapter_kind, v))
 											.unwrap_or_default();
-										self.captured_data.usage = Some(usage)
+										self.captured_data.usage = Some(usage);
 									}
 									_ => (), // do nothing, will be captured the OpenAI way
 								}
@@ -140,10 +140,8 @@ impl futures::Stream for OpenAIStreamer {
 							return Poll::Ready(Some(Ok(InterStreamEvent::ReasoningChunk(reasoning_content))));
 						}
 						// If we do not have content, then log a trace message
-						else {
-							// TODO: use tracing debug
-							tracing::warn!("EMPTY CHOICE CONTENT");
-						}
+						// TODO: use tracing debug
+						tracing::warn!("EMPTY CHOICE CONTENT");
 					}
 					// -- Usage message
 					else {

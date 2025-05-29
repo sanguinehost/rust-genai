@@ -1,7 +1,7 @@
 use crate::ModelIden;
 use crate::resolver::{AuthData, Endpoint};
 
-/// A ServiceTarget represents the destination and necessary details for making a service call.
+/// A `ServiceTarget` represents the destination and necessary details for making a service call.
 ///
 /// This structure contains:
 /// - `endpoint`: The specific service endpoint to be contacted.

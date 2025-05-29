@@ -1,4 +1,4 @@
-//! This example demonstrates how to use the ModelMapper to map a ModelIden (model identifier) to
+//! This example demonstrates how to use the `ModelMapper` to map a `ModelIden` (model identifier) to
 //! a potentially different one using the model mapper.
 
 use genai::adapter::AdapterKind;
@@ -39,13 +39,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		chat_req = chat_req.append_message(ChatMessage::user(question));
 
 		println!("\n--- Question:\n{question}");
-		let chat_res = client.exec_chat_stream(MODEL, chat_req.clone(), None).await?;
+		let response = client.exec_chat_stream(MODEL, chat_req.clone(), None).await?;
 
 		println!(
 			"\n--- Answer: ({} - {})",
-			chat_res.model_iden.adapter_kind, chat_res.model_iden.model_name
+			response.model_iden.adapter_kind, response.model_iden.model_name
 		);
-		let assistant_answer = print_chat_stream(chat_res, None).await?;
+		let assistant_answer = print_chat_stream(response, None).await?;
 
 		chat_req = chat_req.append_message(ChatMessage::assistant(assistant_answer));
 	}

@@ -20,10 +20,11 @@ pub struct PrintChatStreamOptions {
 /// Constructors
 impl PrintChatStreamOptions {
 	/// Create a `PrintChatStreamOptions` with the `print_events` field set to `true`
-	pub fn from_print_events(print_events: bool) -> Self {
-		PrintChatStreamOptions {
-			print_events: Some(print_events),
-		}
+	#[must_use]
+	pub const fn from_print_events(print_events: bool) -> Self {
+	    Self {
+	        print_events: Some(print_events),
+	    }
 	}
 }
 

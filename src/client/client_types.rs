@@ -16,13 +16,14 @@ pub struct Client {
 
 impl Default for Client {
 	fn default() -> Self {
-		Client::builder().build()
+		Self::builder().build()
 	}
 }
 
 impl Client {
-	/// Create a new ClientBuilder for Client
+	/// Create a new `ClientBuilder` for Client
 	/// This is just another way to use `ClientBuilder::default()`
+	#[must_use]
 	pub fn builder() -> ClientBuilder {
 		ClientBuilder::default()
 	}

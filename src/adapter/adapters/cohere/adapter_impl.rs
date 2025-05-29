@@ -39,7 +39,7 @@ impl Adapter for CohereAdapter {
 
 	/// Note: For now, it returns the common ones (see above)
 	async fn all_model_names(_kind: AdapterKind) -> Result<Vec<String>> {
-		Ok(MODELS.iter().map(|s| s.to_string()).collect())
+		Ok(MODELS.iter().map(ToString::to_string).collect())
 	}
 
 	fn get_service_url(_model: &ModelIden, service_type: ServiceType, endpoint: Endpoint) -> String {
@@ -58,7 +58,7 @@ impl Adapter for CohereAdapter {
 		let ServiceTarget { endpoint, auth, model } = target;
 
 		// -- api_key (this Adapter requires it)
-		let api_key = get_api_key(auth, &model)?;
+		let api_key = get_api_key(&auth, &model)?;
 
 		// -- url
 		let url = Self::get_service_url(&model, service_type, endpoint);
@@ -153,7 +153,7 @@ impl Adapter for CohereAdapter {
 		options_set: ChatOptionsSet<'_, '_>,
 	) -> Result<ChatStreamResponse> {
 		let web_stream = WebStream::new_with_delimiter(reqwest_builder, "\n");
-		let cohere_stream = CohereStreamer::new(web_stream, model_iden.clone(), options_set);
+		let cohere_stream = CohereStreamer::new(web_stream, model_iden.clone(), &options_set);
 		let chat_stream = ChatStream::from_inter_stream(cohere_stream);
 
 		Ok(ChatStreamResponse {
@@ -199,10 +199,10 @@ impl CohereAdapter {
 		}
 	}
 
-	/// Takes the GenAI ChatMessages and builds the system string and JSON messages for Cohere.
+	/// Takes the `GenAI` `ChatMessages` and builds the system string and JSON messages for Cohere.
 	/// - Pops the last chat user message and sets it as the message
 	/// - Sets any eventual `system` as the first `preamble`
-	/// - Adds all of the system messages into the 'preamble' (this might change when ChatReq has a `.system`)
+	/// - Adds all of the system messages into the 'preamble' (this might change when `ChatReq` has a `.system`)
 	/// - Builds the chat history with the remaining messages
 	fn into_cohere_request_parts(model_iden: ModelIden, mut chat_req: ChatRequest) -> Result<CohereChatRequestParts> {
 		let mut chat_history: Vec<Value> = Vec::new();
@@ -219,7 +219,7 @@ impl CohereAdapter {
 		})?;
 		if !matches!(last_chat_msg.role, ChatRole::User) {
 			return Err(Error::LastChatMessageIsNotUser {
-				model_iden: model_iden.clone(),
+				model_iden,
 				actual_role: last_chat_msg.role,
 			});
 		}
@@ -258,10 +258,10 @@ impl CohereAdapter {
 		// -- Build the preamble
 		// Note: For now, we just concatenate the system messages into the preamble as recommended by Cohere
 		//       Later, the ChatRequest should have a `.system` property
-		let preamble = if !systems.is_empty() {
-			Some(systems.join("\n"))
-		} else {
+		let preamble = if systems.is_empty() {
 			None
+		} else {
+			Some(systems.join("\n"))
 		};
 
 		Ok(CohereChatRequestParts {

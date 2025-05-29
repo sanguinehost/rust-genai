@@ -7,14 +7,14 @@ use std::task::{Context, Poll};
 
 type InterStreamType = Pin<Box<dyn Stream<Item = crate::Result<InterStreamEvent>> + Send>>;
 
-/// ChatStream is a Rust Future Stream that iterates through the events of a chat stream request.
+/// `ChatStream` is a Rust Future Stream that iterates through the events of a chat stream request.
 pub struct ChatStream {
 	inter_stream: InterStreamType,
 }
 
 impl ChatStream {
 	pub(crate) fn new(inter_stream: InterStreamType) -> Self {
-		ChatStream { inter_stream }
+		Self { inter_stream }
 	}
 
 	pub(crate) fn from_inter_stream<T>(inter_stream: T) -> Self
@@ -22,7 +22,7 @@ impl ChatStream {
 		T: Stream<Item = crate::Result<InterStreamEvent>> + Send + Unpin + 'static,
 	{
 		let boxed_stream: InterStreamType = Box::pin(inter_stream);
-		ChatStream::new(boxed_stream)
+		Self::new(boxed_stream)
 	}
 }
 
@@ -66,7 +66,7 @@ pub enum ChatStreamEvent {
 	/// Represents each content chunk. Currently, it only contains text content.
 	Chunk(StreamChunk),
 
-	/// Represents the reasoning_content chunk.
+	/// Represents the `reasoning_content` chunk.
 	ReasoningChunk(StreamChunk),
 
 	/// Represents the end of the stream.
@@ -82,28 +82,28 @@ pub struct StreamChunk {
 	pub content: String,
 }
 
-/// StreamEnd content, with the eventual `.captured_usage` and `.captured_content`.
+/// `StreamEnd` content, with the eventual `.captured_usage` and `.captured_content`.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct StreamEnd {
 	/// The eventual captured usage metadata.
-	/// Note: This requires the ChatOptions `capture_usage` flag to be set to true.
+	/// Note: This requires the `ChatOptions` `capture_usage` flag to be set to true.
 	pub captured_usage: Option<Usage>,
 
 	/// The eventual captured full content.
-	/// Note: This requires the ChatOptions `capture_content` flag to be set to true.
+	/// Note: This requires the `ChatOptions` `capture_content` flag to be set to true.
 	pub captured_content: Option<MessageContent>,
 
 	/// The eventual captured
-	/// Note: This requires the ChatOptions `capture_reasoning` flag to be set to true.
+	/// Note: This requires the `ChatOptions` `capture_reasoning` flag to be set to true.
 	pub captured_reasoning_content: Option<String>,
 }
 
 impl From<InterStreamEnd> for StreamEnd {
 	fn from(inter_end: InterStreamEnd) -> Self {
-		StreamEnd {
-			captured_usage: inter_end.captured_usage,
-			captured_content: inter_end.captured_content.map(MessageContent::from),
-			captured_reasoning_content: inter_end.captured_reasoning_content,
+		Self {
+			captured_usage: inter_end.usage,
+			captured_content: inter_end.content.map(MessageContent::from),
+			captured_reasoning_content: inter_end.reasoning_content,
 		}
 	}
 }

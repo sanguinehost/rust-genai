@@ -1,4 +1,4 @@
-//! API DOC: https://github.com/ollama/ollama/blob/main/docs/openai.md
+//! API DOC: <https://github.com/ollama/ollama/blob/main/docs/openai.md>
 
 use crate::adapter::openai::OpenAIAdapter;
 use crate::adapter::{Adapter, AdapterKind, ServiceType, WebRequestData};
@@ -13,8 +13,8 @@ use value_ext::JsonValueExt;
 
 pub struct OllamaAdapter;
 
-/// Note: For now, it uses the OpenAI compatibility layer
-///       (https://github.com/ollama/ollama/blob/main/docs/openai.md)
+/// Note: For now, it uses the `OpenAI` compatibility layer
+///       (<https://github.com/ollama/ollama/blob/main/docs/openai.md>)
 ///       Since the base Ollama API supports `application/x-ndjson` for streaming, whereas others support `text/event-stream`
 impl Adapter for OllamaAdapter {
 	fn default_endpoint() -> Endpoint {
@@ -27,7 +27,7 @@ impl Adapter for OllamaAdapter {
 	}
 
 	/// Note 1: For now, this adapter is the only one making a full request to the Ollama server
-	/// Note 2: Use the OpenAI API to communicate with the Ollama server (https://platform.openai.com/docs/api-reference/models/list)
+	/// Note 2: Use the `OpenAI` API to communicate with the Ollama server (<https://platform.openai.com/docs/api-reference/models/list>)
 	///
 	/// TODO: This will use the default endpoint.
 	///       Later, we might add another function with an endpoint, so the user can provide a custom endpoint.
@@ -60,7 +60,7 @@ impl Adapter for OllamaAdapter {
 	}
 
 	fn get_service_url(model_iden: &ModelIden, service_type: ServiceType, endpoint: Endpoint) -> String {
-		OpenAIAdapter::util_get_service_url(model_iden, service_type, endpoint)
+		OpenAIAdapter::util_get_service_url(model_iden, service_type, &endpoint)
 	}
 
 	fn to_web_request_data(
@@ -69,7 +69,7 @@ impl Adapter for OllamaAdapter {
 		chat_req: ChatRequest,
 		chat_options: ChatOptionsSet<'_, '_>,
 	) -> Result<WebRequestData> {
-		OpenAIAdapter::util_to_web_request_data(target, service_type, chat_req, chat_options)
+		OpenAIAdapter::util_to_web_request_data(target, service_type, chat_req, &chat_options)
 	}
 
 	fn to_chat_response(

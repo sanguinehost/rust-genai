@@ -69,8 +69,9 @@ pub struct PromptTokensDetails {
 
 impl PromptTokensDetails {
 	/// Checks if all fields are `None`.
-	pub fn is_empty(&self) -> bool {
-		self.cache_creation_tokens.is_none() && self.cached_tokens.is_none() && self.audio_tokens.is_none()
+	#[must_use]
+	pub const fn is_empty(&self) -> bool {
+	    self.cache_creation_tokens.is_none() && self.cached_tokens.is_none() && self.audio_tokens.is_none()
 	}
 }
 
@@ -90,10 +91,11 @@ pub struct CompletionTokensDetails {
 
 impl CompletionTokensDetails {
 	/// Checks if all fields are `None`.
-	pub fn is_empty(&self) -> bool {
-		self.accepted_prediction_tokens.is_none()
-			&& self.rejected_prediction_tokens.is_none()
-			&& self.reasoning_tokens.is_none()
-			&& self.audio_tokens.is_none()
+	#[must_use]
+	pub const fn is_empty(&self) -> bool {
+	    self.accepted_prediction_tokens.is_none()
+	        && self.rejected_prediction_tokens.is_none()
+	        && self.reasoning_tokens.is_none()
+	        && self.audio_tokens.is_none()
 	}
 }

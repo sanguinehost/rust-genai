@@ -15,18 +15,18 @@ pub struct GeminiStreamer {
 	options: StreamerOptions,
 
 	// -- Set by the poll_next
-	/// Flag to not poll the EventSource after a MessageStop event.
+	/// Flag to not poll the `EventSource` after a `MessageStop` event.
 	done: bool,
 	captured_data: StreamerCapturedData,
 }
 
 impl GeminiStreamer {
-	pub fn new(inner: WebStream, model_iden: ModelIden, options_set: ChatOptionsSet<'_, '_>) -> Self {
+	pub fn new(inner: WebStream, model_iden: ModelIden, options_set: &ChatOptionsSet<'_, '_>) -> Self {
 		Self {
 			inner,
 			done: false,
 			options: StreamerOptions::new(model_iden, options_set),
-			captured_data: Default::default(),
+			captured_data: StreamerCapturedData::default(),
 		}
 	}
 }
@@ -51,9 +51,9 @@ impl futures::Stream for GeminiStreamer {
 						"[" => InterStreamEvent::Start,
 						"]" => {
 							let inter_stream_end = InterStreamEnd {
-								captured_usage: self.captured_data.usage.take(),
-								captured_content: self.captured_data.content.take(),
-								captured_reasoning_content: self.captured_data.reasoning_content.take(),
+								usage: self.captured_data.usage.take(),
+								content: self.captured_data.content.take(),
+								reasoning_content: self.captured_data.reasoning_content.take(),
 							};
 
 							InterStreamEvent::End(inter_stream_end)
@@ -84,10 +84,10 @@ impl futures::Stream for GeminiStreamer {
 									}
 								};
 
-							let GeminiChatResponse { mut contents, usage } = gemini_response;
+							let GeminiChatResponse { contents, usage } = gemini_response;
 
 							// For streaming with InterStreamEvent::Chunk(String), we process only the text from the first candidate.
-							let first_content = contents.drain(..).next();
+							let first_content = contents.into_iter().next();
 
 							// Capture usage regardless of content type for this chunk, as Gemini sends it cumulatively.
 							if self.options.capture_usage {

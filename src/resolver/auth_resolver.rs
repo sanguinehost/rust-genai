@@ -24,19 +24,19 @@ pub enum AuthResolver {
 impl AuthResolver {
 	/// Create a new `AuthResolver` from a resolver function.
 	pub fn from_resolver_fn(resolver_fn: impl IntoAuthResolverFn) -> Self {
-		AuthResolver::ResolverFn(resolver_fn.into_resolver_fn())
+		Self::ResolverFn(resolver_fn.into_resolver_fn())
 	}
 
 	pub fn from_resolver_async_fn(resolver_fn: impl IntoAuthResolverAsyncFn) -> Self {
-		AuthResolver::ResolverAsyncFn(resolver_fn.into_async_auth_resolver())
+		Self::ResolverAsyncFn(resolver_fn.into_async_auth_resolver())
 	}
 }
 
 impl AuthResolver {
 	pub(crate) async fn resolve(&self, model_iden: ModelIden) -> Result<Option<AuthData>> {
 		match self {
-			AuthResolver::ResolverFn(resolver_fn) => resolver_fn.clone().exec_fn(model_iden),
-			AuthResolver::ResolverAsyncFn(resolver_fn) => resolver_fn.exec_fn(model_iden).await,
+			Self::ResolverFn(resolver_fn) => resolver_fn.clone().exec_fn(model_iden),
+			Self::ResolverAsyncFn(resolver_fn) => resolver_fn.exec_fn(model_iden).await,
 		}
 	}
 	// pub(crate) async fn resolve_or_default(&self, ())
@@ -123,8 +123,8 @@ where
 
 // Implement Clone for Box<dyn AuthResolverFn>
 impl Clone for Box<dyn AuthResolverFn> {
-	fn clone(&self) -> Box<dyn AuthResolverFn> {
-		self.clone_box()
+	fn clone(&self) -> Self {
+	    self.clone_box()
 	}
 }
 

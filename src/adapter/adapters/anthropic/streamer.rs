@@ -13,18 +13,18 @@ pub struct AnthropicStreamer {
 	options: StreamerOptions,
 
 	// -- Set by the poll_next
-	/// Flag to prevent polling the EventSource after a MessageStop event
+	/// Flag to prevent polling the `EventSource` after a `MessageStop` event
 	done: bool,
 	captured_data: StreamerCapturedData,
 }
 
 impl AnthropicStreamer {
-	pub fn new(inner: EventSource, model_iden: ModelIden, options_set: ChatOptionsSet<'_, '_>) -> Self {
+	pub fn new(inner: EventSource, model_iden: ModelIden, options_set: &ChatOptionsSet<'_, '_>) -> Self {
 		Self {
 			inner,
 			done: false,
 			options: StreamerOptions::new(model_iden, options_set),
-			captured_data: Default::default(),
+			captured_data: StreamerCapturedData::default(),
 		}
 	}
 }
@@ -45,15 +45,11 @@ impl futures::Stream for AnthropicStreamer {
 					let message_type = message.event.as_str();
 
 					match message_type {
-						"message_start" => {
+						"message_start" | "message_delta" => {
 							self.capture_usage(message_type, &message.data)?;
 							continue;
 						}
-						"message_delta" => {
-							self.capture_usage(message_type, &message.data)?;
-							continue;
-						}
-						"content_block_start" => {
+						"content_block_start" | "content_block_stop" => {
 							continue;
 						}
 						"content_block_delta" => {
@@ -73,9 +69,6 @@ impl futures::Stream for AnthropicStreamer {
 							}
 
 							return Poll::Ready(Some(Ok(InterStreamEvent::Chunk(content))));
-						}
-						"content_block_stop" => {
-							continue;
 						}
 						// -- END MESSAGE
 						"message_stop" => {
@@ -100,9 +93,9 @@ impl futures::Stream for AnthropicStreamer {
 							};
 
 							let inter_stream_end = InterStreamEnd {
-								captured_usage,
-								captured_content: self.captured_data.content.take(),
-								captured_reasoning_content: self.captured_data.reasoning_content.take(),
+								usage: captured_usage,
+								content: self.captured_data.content.take(),
+								reasoning_content: self.captured_data.reasoning_content.take(),
 							};
 
 							// TODO: Need to capture the data as needed
@@ -130,7 +123,7 @@ impl AnthropicStreamer {
 		if self.options.capture_usage {
 			let data = self.parse_message_data(message_data)?;
 			// TODO: Might want to exit early if usage is not found
-
+	
 			let (input_path, output_path) = if message_type == "message_start" {
 				("/message/usage/input_tokens", "/message/usage/output_tokens")
 			} else if message_type == "message_delta" {
@@ -142,7 +135,7 @@ impl AnthropicStreamer {
 				);
 				return Ok(()); // For now permissive
 			};
-
+	
 			// -- Capture/Add the eventual input_tokens
 			// NOTE: Permissive on this one; if an error occurs, treat it as nonexistent (for now)
 			if let Ok(input_tokens) = data.x_get::<i32>(input_path) {
@@ -154,7 +147,7 @@ impl AnthropicStreamer {
 					.get_or_insert(0);
 				*val += input_tokens;
 			}
-
+	
 			if let Ok(output_tokens) = data.x_get::<i32>(output_path) {
 				let val = self
 					.captured_data
@@ -165,11 +158,11 @@ impl AnthropicStreamer {
 				*val += output_tokens;
 			}
 		}
-
+	
 		Ok(())
 	}
-
-	/// Simple wrapper for now, with the corresponding map_err.
+	
+	/// Simple wrapper for now, with the corresponding `map_err`.
 	/// Might have more logic later.
 	fn parse_message_data(&self, payload: &str) -> Result<Value> {
 		serde_json::from_str(payload).map_err(|serde_error| Error::StreamParse {

@@ -18,25 +18,25 @@ use value_ext::JsonValueExt;
 // region:    --- Chat
 
 pub async fn common_test_chat_simple_ok(model: &str, check: Option<Check>) -> Result<()> {
-	let client = common_client_from_model(model)?;
+	let client = common_client_from_model(model);
 	let messages = vec![ChatMessage::user("What is the capital of France?")];
 	let chat_req = ChatRequest::new(messages);
 
-	let chat_res = client.exec_chat(model.into(), chat_req, None).await?;
+	let response = client.exec_chat(model, chat_req, None).await?;
 
 	// Check: Has content
 	assert!(
-		chat_res.contents.first().is_some() && !chat_res.first_content_text_as_str().unwrap_or("").is_empty(),
+		!response.contents.is_empty() && !response.first_content_text_as_str().unwrap_or("").is_empty(),
 		"chat_res.content should not be empty"
 	);
 
 	// Check: Content contains "Paris"
-	let content = chat_res.first_content_text_as_str().ok_or("Should have content")?;
+	let content = response.first_content_text_as_str().ok_or("Should have content")?;
 	assert!(content.contains("Paris"), "content should contain 'Paris'");
 
 	// Check: Usage
-	if check.as_ref().map_or(true, |c| c.contains(Check::USAGE)) {
-		let usage = &chat_res.usage;
+	if check.as_ref().is_none_or(|c| c.contains(Check::USAGE)) {
+		let usage = &response.usage;
 		let prompt_tokens = get_option_value!(usage.prompt_tokens);
 		let completion_tokens = get_option_value!(usage.completion_tokens);
 		let total_tokens = get_option_value!(usage.total_tokens);
@@ -58,7 +58,7 @@ pub async fn common_test_chat_simple_ok(model: &str, check: Option<Check>) -> Re
 
 		// -- Check Reasoning Content
 		if contains_checks(check, Check::REASONING) {
-			let reasoning_content = chat_res
+			let reasoning_content = response
 				.reasoning_content
 				.as_deref()
 				.ok_or("SHOULD have extracted some reasoning_content")?;
@@ -86,14 +86,14 @@ pub async fn common_test_chat_multi_system_ok(model: &str) -> Result<()> {
 	.with_system("And end with 'Thank you'");
 
 	// -- Exec
-	let chat_res = client.exec_chat(model, chat_req, None).await?;
+	let response = client.exec_chat(model, chat_req, None).await?;
 
 	// -- Check
 	assert!(
-		chat_res.contents.first().is_some() && !chat_res.first_content_text_as_str().unwrap_or("").is_empty(),
+		!response.contents.is_empty() && !response.first_content_text_as_str().unwrap_or("").is_empty(),
 		"Content should not be empty"
 	);
-	let usage = chat_res.usage;
+	let usage = response.usage;
 	let prompt_tokens = get_option_value!(usage.prompt_tokens);
 	let completion_tokens = get_option_value!(usage.completion_tokens);
 	let total_tokens = get_option_value!(usage.total_tokens);
@@ -108,7 +108,7 @@ pub async fn common_test_chat_multi_system_ok(model: &str) -> Result<()> {
 }
 
 /// Test with JSON mode enabled. This is not a structured output test.
-/// - test_token: This is to avoid checking the token (due to an Ollama bug when in JSON mode, no token is returned)
+/// - `test_token`: This is to avoid checking the token (due to an Ollama bug when in JSON mode, no token is returned)
 pub async fn common_test_chat_json_mode_ok(model: &str, check: Option<Check>) -> Result<()> {
 	validate_checks(check.clone(), Check::USAGE)?;
 
@@ -117,34 +117,34 @@ pub async fn common_test_chat_json_mode_ok(model: &str, check: Option<Check>) ->
 	let chat_req = ChatRequest::new(vec![
 		// -- Messages (de/activate to see the differences)
 		ChatMessage::system(
-			r#"Turn the user content into the most probable JSON content.
-Reply in a JSON format."#,
+			r"Turn the user content into the most probable JSON content.
+Reply in a JSON format.",
 		),
 		ChatMessage::user(
-			r#"
+			r"
 | Model          | Maker
 | gpt-4o	       | OpenAI
 | gpt-4o-mini	   | OpenAI
 | llama-3.1-70B  | Meta
-		"#,
+		",
 		),
 	]);
 	let chat_options = ChatOptions::default().with_response_format(ChatResponseFormat::JsonMode);
 
 	// -- Exec
-	let chat_res = client.exec_chat(model, chat_req, Some(&chat_options)).await?;
+	let response = client.exec_chat(model, chat_req, Some(&chat_options)).await?;
 
 	// -- Check
 	// Ensure tokens are still counted
 	if contains_checks(check, Check::USAGE) {
 		// Ollama does not send back token usage when in JSON mode
-		let usage = &chat_res.usage;
+		let usage = &response.usage;
 		let total_tokens = get_option_value!(usage.total_tokens);
 		assert!(total_tokens > 0, "total_tokens should be > 0");
 	}
 
 	// Check content
-	let content = chat_res.first_content_text_into_string().ok_or("SHOULD HAVE CONTENT")?;
+	let content = response.first_content_text_into_string().ok_or("SHOULD HAVE CONTENT")?;
 	// Parse content as JSON
 	let json: serde_json::Value = serde_json::from_str(&content).map_err(|err| format!("Was not valid JSON: {err}"))?;
 	// Pretty print JSON
@@ -154,7 +154,7 @@ Reply in a JSON format."#,
 }
 
 /// Test with JSON mode enabled. This is not a structured output test.
-/// - test_token: This is to avoid checking the token (due to an Ollama bug when in JSON mode, no token is returned)
+/// - `test_token`: This is to avoid checking the token (due to an Ollama bug when in JSON mode, no token is returned)
 pub async fn common_test_chat_json_structured_ok(model: &str, check: Option<Check>) -> Result<()> {
 	validate_checks(check.clone(), Check::USAGE)?;
 
@@ -163,16 +163,16 @@ pub async fn common_test_chat_json_structured_ok(model: &str, check: Option<Chec
 	let chat_req = ChatRequest::new(vec![
 		// -- Messages (de/activate to see the differences)
 		ChatMessage::system(
-			r#"Turn the user content into the most probable JSON content.
-Reply in a JSON format."#,
+			r"Turn the user content into the most probable JSON content.
+Reply in a JSON format.",
 		),
 		ChatMessage::user(
-			r#"
+			r"
 | Model          | Maker
 | gpt-4o	       | OpenAI
 | gpt-4o-mini	   | OpenAI
 | llama-3.1-70B  | Meta
-		"#,
+		",
 		),
 	]);
 
@@ -199,19 +199,19 @@ Reply in a JSON format."#,
 	let chat_options = ChatOptions::default().with_response_format(JsonSpec::new("some-schema", json_schema));
 
 	// -- Exec
-	let chat_res = client.exec_chat(model, chat_req, Some(&chat_options)).await?;
+	let response = client.exec_chat(model, chat_req, Some(&chat_options)).await?;
 
 	// -- Check
 	// Ensure tokens are still counted
 	if contains_checks(check, Check::USAGE) {
 		// Ollama does not send back token usage when in JSON mode
-		let usage = &chat_res.usage;
+		let usage = &response.usage;
 		let total_tokens = get_option_value!(usage.total_tokens);
 		assert!(total_tokens > 0, "total_tokens should be > 0");
 	}
 
 	// Check content
-	let content = chat_res.first_content_text_into_string().ok_or("SHOULD HAVE CONTENT")?;
+	let content = response.first_content_text_into_string().ok_or("SHOULD HAVE CONTENT")?;
 	// Parse content as JSON
 	let json_response: serde_json::Value =
 		serde_json::from_str(&content).map_err(|err| format!("Was not valid JSON: {err}"))?;
@@ -231,11 +231,11 @@ pub async fn common_test_chat_temperature_ok(model: &str) -> Result<()> {
 	let chat_options = ChatOptions::default().with_temperature(0.);
 
 	// -- Exec
-	let chat_res = client.exec_chat(model, chat_req, Some(&chat_options)).await?;
+	let response = client.exec_chat(model, chat_req, Some(&chat_options)).await?;
 
 	// -- Check
 	assert!(
-		!chat_res.first_content_text_as_str().unwrap_or("").is_empty(),
+		!response.first_content_text_as_str().unwrap_or("").is_empty(),
 		"Content should not be empty"
 	);
 
@@ -249,9 +249,9 @@ pub async fn common_test_chat_stop_sequences_ok(model: &str) -> Result<()> {
 	let chat_options = ChatOptions::default().with_stop_sequences(vec!["London".to_string()]);
 
 	// -- Exec
-	let chat_res = client.exec_chat(model, chat_req, Some(&chat_options)).await?;
+	let response = client.exec_chat(model, chat_req, Some(&chat_options)).await?;
 
-	let ai_content_lower = chat_res
+	let ai_content_lower = response
 		.first_content_text_as_str()
 		.ok_or("Should have a AI response")?
 		.to_lowercase();
@@ -273,15 +273,15 @@ pub async fn common_test_chat_reasoning_normalize_ok(model: &str) -> Result<()> 
 	let chat_req = seed_chat_req_simple();
 
 	// -- Exec
-	let chat_res = client.exec_chat(model, chat_req, None).await?;
+	let response = client.exec_chat(model, chat_req, None).await?;
 
 	// -- Check Content
-	chat_res.first_content_text_as_str();
-	let content = chat_res.first_content_text_as_str().ok_or("Should have content")?;
+	response.first_content_text_as_str();
+	let content = response.first_content_text_as_str().ok_or("Should have content")?;
 	assert!(!content.trim().is_empty(), "Content should not be empty");
 
 	// -- Check Reasoning Content
-	let reasoning_content = chat_res.reasoning_content.as_deref().ok_or("Should have reasoning_content")?;
+	let reasoning_content = response.reasoning_content.as_deref().ok_or("Should have reasoning_content")?;
 	// Because the test is so simple, sometime ollama for example, will have `<think>\n\n</think>`
 	// So we are ok if is_empty() for now
 	// assert!(!reasoning_content.is_empty(), "reasoning_content should not be empty");
@@ -291,7 +291,7 @@ pub async fn common_test_chat_reasoning_normalize_ok(model: &str) -> Result<()> 
 	);
 
 	// -- Check Usage
-	let usage = chat_res.usage;
+	let usage = response.usage;
 	let prompt_tokens = get_option_value!(usage.prompt_tokens);
 	let completion_tokens = get_option_value!(usage.completion_tokens);
 	let total_tokens = get_option_value!(usage.total_tokens);
@@ -320,17 +320,17 @@ pub async fn common_test_chat_cache_implicit_simple_ok(model: &str) -> Result<()
 
 	// -- Exec
 	// Execute twice
-	let chat_res = client.exec_chat(model, chat_req.clone(), None).await?;
+	let response = client.exec_chat(model, chat_req.clone(), None).await?;
 	// sleep 500ms
 	tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-	let chat_res = client.exec_chat(model, chat_req, None).await?;
+	let response = client.exec_chat(model, chat_req, None).await?;
 
 	// -- Check Content
-	let content = chat_res.first_content_text_as_str().ok_or("Should have content")?;
+	let content = response.first_content_text_as_str().ok_or("Should have content")?;
 	assert!(!content.trim().is_empty(), "Content should not be empty");
 
 	// -- Check Usage
-	let usage = &chat_res.usage;
+	let usage = &response.usage;
 
 	let prompt_tokens = get_option_value!(usage.prompt_tokens);
 	let completion_tokens = get_option_value!(usage.completion_tokens);
@@ -362,14 +362,14 @@ pub async fn common_test_chat_cache_explicit_user_ok(model: &str) -> Result<()> 
 	]);
 
 	// -- Exec
-	let chat_res = client.exec_chat(model, chat_req, None).await?;
+	let response = client.exec_chat(model, chat_req, None).await?;
 
 	// -- Check Content
-	let content = chat_res.first_content_text_as_str().ok_or("Should have content")?;
+	let content = response.first_content_text_as_str().ok_or("Should have content")?;
 	assert!(!content.trim().is_empty(), "Content should not be empty");
 
 	// -- Check Usage
-	let usage = &chat_res.usage;
+	let usage = &response.usage;
 
 	let prompt_tokens = get_option_value!(usage.prompt_tokens);
 	let completion_tokens = get_option_value!(usage.completion_tokens);
@@ -402,14 +402,14 @@ pub async fn common_test_chat_cache_explicit_system_ok(model: &str) -> Result<()
 	]);
 
 	// -- Exec
-	let chat_res = client.exec_chat(model, chat_req, None).await?;
+	let response = client.exec_chat(model, chat_req, None).await?;
 
 	// -- Check Content
-	let content = chat_res.first_content_text_as_str().ok_or("Should have content")?;
+	let content = response.first_content_text_as_str().ok_or("Should have content")?;
 	assert!(!content.trim().is_empty(), "Content should not be empty");
 
 	// -- Check Usage
-	let usage = &chat_res.usage;
+	let usage = &response.usage;
 
 	let prompt_tokens = get_option_value!(usage.prompt_tokens);
 	let completion_tokens = get_option_value!(usage.completion_tokens);
@@ -442,14 +442,14 @@ pub async fn common_test_chat_stream_simple_ok(model: &str, check: Option<Check>
 	let chat_req = seed_chat_req_simple();
 
 	// -- Exec
-	let chat_res = client.exec_chat_stream(model, chat_req.clone(), None).await?;
+	let response = client.exec_chat_stream(model, chat_req.clone(), None).await?;
 
 	// -- Extract Stream content
 	let StreamExtract {
 		stream_end,
 		content,
 		reasoning_content,
-	} = extract_stream_end(chat_res.stream).await?;
+	} = extract_stream_end(response.stream).await?;
 	let content = content.ok_or("extract_stream_end SHOULD have extracted some content")?;
 
 	// -- Check no meta_usage and captured_content
@@ -479,7 +479,7 @@ pub async fn common_test_chat_stream_simple_ok(model: &str, check: Option<Check>
 }
 
 /// Check that the capture content flag does the capture
-/// NOTE: When checking for reasoning, the captured_reasoning_content should be None in this function
+/// NOTE: When checking for reasoning, the `captured_reasoning_content` should be None in this function
 pub async fn common_test_chat_stream_capture_content_ok(model: &str) -> Result<()> {
 	// -- Setup & Fixtures
 	let client = Client::builder()
@@ -488,14 +488,14 @@ pub async fn common_test_chat_stream_capture_content_ok(model: &str) -> Result<(
 	let chat_req = seed_chat_req_simple();
 
 	// -- Exec
-	let chat_res = client.exec_chat_stream(model, chat_req.clone(), None).await?;
+	let response = client.exec_chat_stream(model, chat_req.clone(), None).await?;
 
 	// -- Extract Stream content
 	let StreamExtract {
 		stream_end,
 		content,
 		reasoning_content,
-	} = extract_stream_end(chat_res.stream).await?;
+	} = extract_stream_end(response.stream).await?;
 
 	// -- Check meta_usage
 	// Should be None as not captured
@@ -533,14 +533,14 @@ pub async fn common_test_chat_stream_capture_all_ok(model: &str, check: Option<C
 	let chat_req = seed_chat_req_simple();
 
 	// -- Exec
-	let chat_res = client.exec_chat_stream(model, chat_req.clone(), None).await?;
+	let response = client.exec_chat_stream(model, chat_req.clone(), None).await?;
 
 	// -- Extract Stream content
 	let StreamExtract {
 		stream_end,
 		content,
 		reasoning_content,
-	} = extract_stream_end(chat_res.stream).await?;
+	} = extract_stream_end(response.stream).await?;
 
 	// -- Check meta_usage
 	let meta_usage = get_option_value!(stream_end.captured_usage);
@@ -594,10 +594,10 @@ pub async fn common_test_chat_image_url_ok(model: &str) -> Result<()> {
 		ContentPart::from_text("What is in this picture?"),
 		ContentPart::from_image_url("image/jpeg", IMAGE_URL_JPG_DUCK),
 	]));
-	let chat_res = client.exec_chat(model, chat_req, None).await?;
+	let response = client.exec_chat(model, chat_req, None).await?;
 
 	// -- Check
-	let res = chat_res.first_content_text_as_str().ok_or("Should have text result")?;
+	let res = response.first_content_text_as_str().ok_or("Should have text result")?;
 	assert_contains(res, "duck");
 
 	Ok(())
@@ -614,10 +614,10 @@ pub async fn common_test_chat_image_b64_ok(model: &str) -> Result<()> {
 		ContentPart::from_text("What is in this picture?"),
 		ContentPart::from_image_base64("image/jpeg", get_b64_duck()?),
 	]));
-	let chat_res = client.exec_chat(model, chat_req, None).await?;
+	let response = client.exec_chat(model, chat_req, None).await?;
 
 	// -- Check
-	let res = chat_res.first_content_text_as_str().ok_or("Should have text result")?;
+	let res = response.first_content_text_as_str().ok_or("Should have text result")?;
 	assert_contains(res, "duck");
 
 	Ok(())
@@ -630,12 +630,12 @@ pub async fn common_test_chat_image_b64_ok(model: &str) -> Result<()> {
 /// Just making the tool request, and checking the tool call response
 /// `complete_check` if for LLMs that are better at giving back the unit and weather.
 pub async fn common_test_tool_simple_ok(model: &str, complete_check: bool) -> Result<()> {
-	let client = common_client_from_model(model)?;
+	let client = common_client_from_model(model);
 	let (messages, tools) = seed_chat_req_tool_simple();
 	let chat_req = ChatRequest::new(messages).with_tools(tools);
 
-	let chat_res = client.exec_chat(model.into(), chat_req, None).await?;
-	let mut tool_calls = chat_res.first_tool_calls().ok_or("Should have tool calls")?;
+	let response = client.exec_chat(model, chat_req, None).await?;
+	let mut tool_calls = response.first_tool_calls().ok_or("Should have tool calls")?;
 	let tool_call = tool_calls.remove(0);
 
 	assert_eq!(tool_call.fn_name, "get_weather");
@@ -657,8 +657,8 @@ pub async fn common_test_tool_full_flow_ok(model: &str, complete_check: bool) ->
 
 	// -- Exec first request to get the tool calls
 	let first_chat_req = ChatRequest::new(messages.clone()).with_tools(tools.clone());
-	let chat_res = client.exec_chat(model, first_chat_req, None).await?;
-	let tool_calls_from_first_res = chat_res.first_into_tool_calls().ok_or("Should have tool calls in chat_res")?;
+	let response = client.exec_chat(model, first_chat_req, None).await?;
+	let tool_calls_from_first_res = response.first_into_tool_calls().ok_or("Should have tool calls in response")?;
 
 	// -- Exec the second request
 	// get the tool call id (first one)
@@ -686,10 +686,10 @@ pub async fn common_test_tool_full_flow_ok(model: &str, complete_check: bool) ->
 	// Create the second ChatRequest
 	let second_chat_req = ChatRequest::new(messages).with_tools(tools);
 
-	let chat_res = client.exec_chat(model, second_chat_req, None).await?;
+	let response = client.exec_chat(model, second_chat_req, None).await?;
 
 	// -- Check
-	let content = chat_res
+	let content = response
 		.first_content_text_as_str()
 		.ok_or("Last response should be message")?
 		.to_lowercase(); // lowercase because some models send "Sunny" and not "sunny"
@@ -715,14 +715,14 @@ pub async fn common_test_resolver_auth_ok(model: &str, auth_data: AuthData) -> R
 	let chat_req = seed_chat_req_simple();
 
 	// -- Exec
-	let chat_res = client.exec_chat(model, chat_req, None).await?;
+	let response = client.exec_chat(model, chat_req, None).await?;
 
 	// -- Check
 	assert!(
-		!chat_res.contents.is_empty(),
+		!response.contents.is_empty(),
 		"Content should not be empty"
 	);
-	let usage = chat_res.usage;
+	let usage = response.usage;
 	let total_tokens = get_option_value!(usage.total_tokens);
 	assert!(total_tokens > 0, "total_tokens should be > 0");
 

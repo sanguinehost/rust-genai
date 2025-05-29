@@ -25,17 +25,18 @@ pub enum AuthData {
 impl AuthData {
 	/// Create a new `AuthData` from an environment variable name.
 	pub fn from_env(env_name: impl Into<String>) -> Self {
-		AuthData::FromEnv(env_name.into())
+		Self::FromEnv(env_name.into())
 	}
 
 	/// Create a new `AuthData` from a single value.
 	pub fn from_single(value: impl Into<String>) -> Self {
-		AuthData::Key(value.into())
+		Self::Key(value.into())
 	}
 
 	/// Create a new `AuthData` from multiple values.
-	pub fn from_multi(data: HashMap<String, String>) -> Self {
-		AuthData::MultiKeys(data)
+	#[must_use]
+	pub const fn from_multi(data: HashMap<String, String>) -> Self {
+	    Self::MultiKeys(data)
 	}
 }
 
@@ -45,16 +46,16 @@ impl AuthData {
 	pub fn single_key_value(&self) -> Result<String> {
 		match self {
 			// Overrides don't use an api key
-			AuthData::RequestOverride { .. } => Ok(String::new()),
-			AuthData::FromEnv(env_name) => {
+			Self::RequestOverride { .. } => Ok(String::new()),
+			Self::FromEnv(env_name) => {
 				// Get value from the environment name.
 				let value = std::env::var(env_name).map_err(|_| Error::ApiKeyEnvNotFound {
 					env_name: env_name.to_string(),
 				})?;
 				Ok(value)
 			}
-			AuthData::Key(value) => Ok(value.to_string()),
-			_ => Err(Error::ResolverAuthDataNotSingleValue),
+			Self::Key(value) => Ok(value.to_string()),
+			Self::MultiKeys(_) => Err(Error::ResolverAuthDataNotSingleValue),
 		}
 	}
 }
@@ -66,10 +67,11 @@ impl std::fmt::Debug for AuthData {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
 			// NOTE: Here we also redact for `FromEnv` in case the developer confuses this with a key.
-			AuthData::FromEnv(_env_name) => write!(f, "AuthData::FromEnv(REDACTED)"),
-			AuthData::Key(_) => write!(f, "AuthData::Single(REDACTED)"),
-			AuthData::MultiKeys(_) => write!(f, "AuthData::Multi(REDACTED)"),
-			AuthData::RequestOverride { .. } => {
+			// NOTE: Here we also redact for `FromEnv` in case the developer confuses this with a key.
+			Self::FromEnv(_env_name) => write!(f, "AuthData::FromEnv(REDACTED)"),
+			Self::Key(_) => write!(f, "AuthData::Single(REDACTED)"),
+			Self::MultiKeys(_) => write!(f, "AuthData::Multi(REDACTED)"),
+			Self::RequestOverride { .. } => {
 				write!(f, "AuthData::RequestOverride {{ url: REDACTED, headers: REDACTED }}")
 			}
 		}

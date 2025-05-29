@@ -59,7 +59,7 @@ impl Adapter for AnthropicAdapter {
 
 	/// Note: For now, it returns the common models (see above)
 	async fn all_model_names(_kind: AdapterKind) -> Result<Vec<String>> {
-		Ok(MODELS.iter().map(|s| s.to_string()).collect())
+		Ok(MODELS.iter().map(ToString::to_string).collect())
 	}
 
 	fn get_service_url(_model: &ModelIden, service_type: ServiceType, endpoint: Endpoint) -> String {
@@ -78,7 +78,7 @@ impl Adapter for AnthropicAdapter {
 		let ServiceTarget { endpoint, auth, model } = target;
 
 		// -- api_key
-		let api_key = get_api_key(auth, &model)?;
+		let api_key = get_api_key(&auth, &model)?;
 
 		// -- url
 		let url = Self::get_service_url(&model, service_type, endpoint);
@@ -97,7 +97,7 @@ impl Adapter for AnthropicAdapter {
 			system,
 			messages,
 			tools,
-		} = Self::into_anthropic_request_parts(model, chat_req)?;
+		} = Self::into_anthropic_request_parts(model, chat_req);
 
 		// -- Build the basic payload
 
@@ -203,22 +203,16 @@ impl Adapter for AnthropicAdapter {
 			}
 		}
 
-		let content = if let Some(tool_calls) = tool_calls {
-			Some(MessageContent::from(tool_calls))
-		} else {
+		let content = tool_calls.map(MessageContent::from).or_else(|| {
 			// Ensure text_content is not empty before creating MessageContent from it
-			if !text_content.is_empty() {
-				Some(MessageContent::from(text_content.join("\n")))
-			} else {
+			if text_content.is_empty() {
 				None // No text and no tool calls
+			} else {
+				Some(MessageContent::from(text_content.join("\n")))
 			}
-		};
+		});
 		
-		let response_contents = if let Some(c) = content {
-			vec![c]
-		} else {
-			Vec::new()
-		};
+		let response_contents = content.map_or_else(Vec::new, |c| vec![c]);
 
 		Ok(ChatResponse {
 			contents: response_contents,
@@ -235,7 +229,7 @@ impl Adapter for AnthropicAdapter {
 		options_set: ChatOptionsSet<'_, '_>,
 	) -> Result<ChatStreamResponse> {
 		let event_source = EventSource::new(reqwest_builder)?;
-		let anthropic_stream = AnthropicStreamer::new(event_source, model_iden.clone(), options_set);
+		let anthropic_stream = AnthropicStreamer::new(event_source, model_iden.clone(), &options_set);
 		let chat_stream = ChatStream::from_inter_stream(anthropic_stream);
 		Ok(ChatStreamResponse {
 			model_iden,
@@ -285,9 +279,10 @@ impl AnthropicAdapter {
 		}
 	}
 
-	/// Takes the GenAI ChatMessages and constructs the System string and JSON Messages for Anthropic.
+	/// Takes the `GenAI` `ChatMessages` and constructs the System string and JSON Messages for Anthropic.
 	/// - Will push the `ChatRequest.system` and system message to `AnthropicRequestParts.system`
-	fn into_anthropic_request_parts(_model_iden: ModelIden, chat_req: ChatRequest) -> Result<AnthropicRequestParts> {
+	#[allow(clippy::too_many_lines)]
+	fn into_anthropic_request_parts(_model_iden: ModelIden, chat_req: ChatRequest) -> AnthropicRequestParts {
 		let mut messages: Vec<Value> = Vec::new();
 		// (content, is_cache_control)
 		let mut systems: Vec<(String, bool)> = Vec::new();
@@ -300,19 +295,19 @@ impl AnthropicAdapter {
 
 		// -- Process the messages
 		for msg in chat_req.messages {
-			let is_cache_control = msg.options.map(|o| o.cache_control.is_some()).unwrap_or(false);
+			let is_cache_control = msg.options.is_some_and(|o| o.cache_control.is_some());
 
 			match msg.role {
 				// for now, system and tool messages go to the system
 				ChatRole::System => {
 					if let MessageContent::Text(content) = msg.content {
-						systems.push((content, is_cache_control))
+						systems.push((content, is_cache_control));
 					}
 					// TODO: Needs to trace/warn that other types are not supported
 				}
 				ChatRole::User => {
 					let content = match msg.content {
-						MessageContent::Text(content) => apply_cache_control_to_text(is_cache_control, content),
+						MessageContent::Text(content) => apply_cache_control_to_text(is_cache_control, &content),
 						MessageContent::Parts(parts) => {
 							let values = parts
 								.iter()
@@ -337,9 +332,9 @@ impl AnthropicAdapter {
 									},
 								})
 								.collect::<Vec<Value>>();
-
+	
 							let values = apply_cache_control_to_parts(is_cache_control, values);
-
+	
 							json!(values)
 						}
 						// Use `match` instead of `if let`. This will allow to future-proof this
@@ -347,8 +342,7 @@ impl AnthropicAdapter {
 						// this way the library would not compile if not all methods are implemented
 						// continue would allow to gracefully skip pushing unserializable message
 						// TODO: Probably need to warn if it is a ToolCalls type of content
-						MessageContent::ToolCalls(_) => continue,
-						MessageContent::ToolResponses(_) => continue,
+						MessageContent::ToolCalls(_) | MessageContent::ToolResponses(_) => continue,
 					};
 					messages.push(json! ({"role": "user", "content": content}));
 				}
@@ -356,8 +350,8 @@ impl AnthropicAdapter {
 					//
 					match msg.content {
 						MessageContent::Text(content) => {
-							let content = apply_cache_control_to_text(is_cache_control, content);
-							messages.push(json! ({"role": "assistant", "content": content}))
+							let content = apply_cache_control_to_text(is_cache_control, &content);
+							messages.push(json! ({"role": "assistant", "content": content}));
 						}
 						MessageContent::ToolCalls(tool_calls) => {
 							let tool_calls = tool_calls
@@ -379,8 +373,7 @@ impl AnthropicAdapter {
 							}));
 						}
 						// TODO: Probably need to trace/warn that this will be ignored
-						MessageContent::Parts(_) => (),
-						MessageContent::ToolResponses(_) => (),
+						MessageContent::Parts(_) | MessageContent::ToolResponses(_) => (),
 					}
 				}
 				ChatRole::Tool => {
@@ -406,12 +399,15 @@ impl AnthropicAdapter {
 				}
 			}
 		}
-
+	
 		// -- Create the Anthropic system
 		// NOTE: Anthropic does not have a "role": "system", just a single optional system property
-		let system = if !systems.is_empty() {
+		let system = if systems.is_empty() {
+			None
+		} else {
 			let mut last_cache_idx = -1;
 			// first determine the last cache control index
+			#[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 			for (idx, (_, is_cache_control)) in systems.iter().enumerate() {
 				if *is_cache_control {
 					last_cache_idx = idx as i32;
@@ -420,6 +416,7 @@ impl AnthropicAdapter {
 			// Now build the system multi part
 			let system: Value = if last_cache_idx > 0 {
 				let mut parts: Vec<Value> = Vec::new();
+				#[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 				for (idx, (content, _)) in systems.iter().enumerate() {
 					let idx = idx as i32;
 					if idx == last_cache_idx {
@@ -438,10 +435,8 @@ impl AnthropicAdapter {
 				json!(content)
 			};
 			Some(system)
-		} else {
-			None
 		};
-
+	
 		// -- Process the tools
 		let tools = chat_req.tools.map(|tools| {
 			tools
@@ -454,7 +449,7 @@ impl AnthropicAdapter {
 						"name": tool.name,
 						"input_schema": tool.schema,
 					});
-
+	
 					if let Some(description) = tool.description {
 						// TODO: need to handle error
 						let _ = tool_value.x_insert("description", description);
@@ -463,17 +458,17 @@ impl AnthropicAdapter {
 				})
 				.collect::<Vec<Value>>()
 		});
-
-		Ok(AnthropicRequestParts {
+	
+		AnthropicRequestParts {
 			system,
 			messages,
 			tools,
-		})
+		}
 	}
 }
-
+	
 /// Apply the cache control logic to a text content
-fn apply_cache_control_to_text(is_cache_control: bool, content: String) -> Value {
+fn apply_cache_control_to_text(is_cache_control: bool, content: &str) -> Value {
 	if is_cache_control {
 		let value = json!({"type": "text", "text": content, "cache_control": {"type": "ephemeral"}});
 		json!(vec![value])
@@ -483,7 +478,7 @@ fn apply_cache_control_to_text(is_cache_control: bool, content: String) -> Value
 		json!(content)
 	}
 }
-
+	
 /// Apply the cache control logic to a text content
 fn apply_cache_control_to_parts(is_cache_control: bool, parts: Vec<Value>) -> Vec<Value> {
 	let mut parts = parts;

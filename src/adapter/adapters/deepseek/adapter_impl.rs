@@ -27,11 +27,11 @@ impl Adapter for DeepSeekAdapter {
 	}
 
 	async fn all_model_names(_kind: AdapterKind) -> Result<Vec<String>> {
-		Ok(MODELS.iter().map(|s| s.to_string()).collect())
+		Ok(MODELS.iter().map(ToString::to_string).collect())
 	}
 
 	fn get_service_url(model: &ModelIden, service_type: ServiceType, endpoint: Endpoint) -> String {
-		OpenAIAdapter::util_get_service_url(model, service_type, endpoint)
+		OpenAIAdapter::util_get_service_url(model, service_type, &endpoint)
 	}
 
 	fn to_web_request_data(
@@ -40,7 +40,7 @@ impl Adapter for DeepSeekAdapter {
 		chat_req: ChatRequest,
 		chat_options: ChatOptionsSet<'_, '_>,
 	) -> Result<WebRequestData> {
-		OpenAIAdapter::util_to_web_request_data(target, service_type, chat_req, chat_options)
+		OpenAIAdapter::util_to_web_request_data(target, service_type, chat_req, &chat_options)
 	}
 
 	fn to_chat_response(

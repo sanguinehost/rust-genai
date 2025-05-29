@@ -16,14 +16,15 @@ enum EndpointInner {
 
 /// Constructors
 impl Endpoint {
-	pub fn from_static(url: &'static str) -> Self {
-		Endpoint {
-			inner: EndpointInner::Static(url),
-		}
+	#[must_use]
+	pub const fn from_static(url: &'static str) -> Self {
+	    Self {
+	        inner: EndpointInner::Static(url),
+	    }
 	}
 
 	pub fn from_owned(url: impl Into<Arc<str>>) -> Self {
-		Endpoint {
+		Self {
 			inner: EndpointInner::Owned(url.into()),
 		}
 	}
@@ -31,6 +32,7 @@ impl Endpoint {
 
 /// Getters
 impl Endpoint {
+	#[must_use]
 	pub fn base_url(&self) -> &str {
 		match &self.inner {
 			EndpointInner::Static(url) => url,

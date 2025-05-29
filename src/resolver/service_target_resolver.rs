@@ -26,21 +26,21 @@ pub enum ServiceTargetResolver {
 impl ServiceTargetResolver {
 	/// Create a new synchronous `ServiceTargetResolver` from a resolver function.
 	pub fn from_resolver_fn(resolver_fn: impl IntoServiceTargetResolverFn) -> Self {
-		ServiceTargetResolver::ResolverFn(resolver_fn.into_resolver_fn())
+		Self::ResolverFn(resolver_fn.into_resolver_fn())
 	}
 
 	/// Create a new asynchronous `ServiceTargetResolver` from an async resolver function.
 	pub fn from_resolver_async_fn(resolver_fn: impl IntoServiceTargetResolverAsyncFn) -> Self {
-		ServiceTargetResolver::ResolverAsyncFn(resolver_fn.into_resolver_async_fn())
+		Self::ResolverAsyncFn(resolver_fn.into_resolver_async_fn())
 	}
 }
 
 impl ServiceTargetResolver {
-	/// Resolve the ServiceTarget, calling the appropriate sync or async function.
+	/// Resolve the `ServiceTarget`, calling the appropriate sync or async function.
 	pub(crate) async fn resolve(&self, service_target: ServiceTarget) -> Result<ServiceTarget> {
 		match self {
-			ServiceTargetResolver::ResolverFn(resolver_fn) => resolver_fn.clone().exec_fn(service_target),
-			ServiceTargetResolver::ResolverAsyncFn(resolver_fn) => resolver_fn.clone().exec_fn(service_target).await,
+			Self::ResolverFn(resolver_fn) => resolver_fn.clone().exec_fn(service_target),
+			Self::ResolverAsyncFn(resolver_fn) => resolver_fn.clone().exec_fn(service_target).await,
 		}
 	}
 }
@@ -74,8 +74,8 @@ where
 
 // Implement Clone for Box<dyn ServiceTargetResolverFn>
 impl Clone for Box<dyn ServiceTargetResolverFn> {
-	fn clone(&self) -> Box<dyn ServiceTargetResolverFn> {
-		self.clone_box()
+	fn clone(&self) -> Self {
+	    self.clone_box()
 	}
 }
 

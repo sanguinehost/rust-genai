@@ -35,31 +35,29 @@ use genai::Client;
 use genai::adapter::AdapterKind;
 use genai::Result as GenaiResult; // genai's Result, aliased to avoid conflict
 
-pub fn common_client_gemini() -> GenaiResult<Client> { // Use GenaiResult
+pub fn common_client_gemini() -> Client {
     // Client::builder()
     //     .with_adapter_kind(AdapterKind::Gemini) // This method does not exist on ClientBuilder
     //     .try_build()
     // For now, assume default builder is sufficient or custom config will be added if needed by other tests.
     // Adapters are typically resolved from the model string.
-    Ok(Client::builder().build()) // build() returns Client, so wrap in Ok for GenaiResult.
+    Client::builder().build()
 }
 
-pub fn common_client_from_model(model_name_str: &str) -> GenaiResult<Client> {
+pub fn common_client_from_model(model_name_str: &str) -> Client {
 	// Very basic dispatch for now, can be expanded.
 	// This assumes model_name_str is like "adapter/model_name", e.g., "gemini/gemini-2.5-flash"
 	if model_name_str.starts_with("gemini/") || model_name_str.starts_with("gemini-2.5") || model_name_str.starts_with("gemini-1.5") {
 		common_client_gemini()
 	} else if model_name_str.starts_with("anthropic/") {
 		// Assuming a similar helper for anthropic, or direct build
-		Ok(Client::builder().build()) // Placeholder, adapt if anthropic needs specific setup
-	} else if model_name_str.starts_with("openai/") || model_name_str.starts_with("gpt-") {
-		Ok(Client::builder().build()) // Placeholder
-	} else if model_name_str.starts_with("cohere/") || model_name_str.starts_with("command-") {
-		Ok(Client::builder().build()) // Placeholder
+		Client::builder().build() // Placeholder, adapt if anthropic needs specific setup
+	} else if model_name_str.starts_with("openai/") || model_name_str.starts_with("gpt-") || model_name_str.starts_with("cohere/") || model_name_str.starts_with("command-") {
+		Client::builder().build() // Placeholder
 	} else {
 		// Default or error
-		println!("Warning: common_client_from_model falling back to default client for model: {}", model_name_str);
-		Ok(Client::builder().build())
+		println!("Warning: common_client_from_model falling back to default client for model: {model_name_str}");
+		Client::builder().build()
 	}
 }
 

@@ -9,7 +9,7 @@ impl Client {
 	///
 	/// IMPORTANT:
 	/// - Besides the Ollama adapter, this will only look at a hardcoded static list of names for now.
-	/// - For Ollama, it will currently make a live request to the default host/port (http://localhost:11434/v1/).
+	/// - For Ollama, it will currently make a live request to the default host/port (<http://localhost:11434/v1/>).
 	/// - This function will eventually change to either take an endpoint or have another function to allow a custom endpoint.
 	///
 	/// Notes:
@@ -21,7 +21,7 @@ impl Client {
 		Ok(models)
 	}
 
-	/// Return the default model for a model_name str.
+	/// Return the default model for a `model_name` str.
 	/// This is used before
 	pub fn default_model(&self, model_name: &str) -> Result<ModelIden> {
 		// -- First get the default ModelInfo
@@ -70,9 +70,9 @@ impl Client {
 					webc_error,
 				})?;
 
-		let chat_res = AdapterDispatcher::to_chat_response(model, web_res, options_set)?;
+		let response = AdapterDispatcher::to_chat_response(model, web_res, options_set)?;
 
-		Ok(chat_res)
+		Ok(response)
 	}
 
 	/// Executes a chat stream response.
@@ -108,11 +108,7 @@ impl Client {
 
 		let reqwest_builder = self
 			.web_client()
-			.new_req_builder(&url, &headers, payload)
-			.map_err(|webc_error| Error::WebModelCall {
-				model_iden: model.clone(),
-				webc_error,
-			})?;
+			.new_req_builder(&url, &headers, &payload);
 
 		let res = AdapterDispatcher::to_chat_stream(model, reqwest_builder, options_set)?;
 

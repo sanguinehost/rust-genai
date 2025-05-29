@@ -4,10 +4,10 @@ use crate::{ModelIden, resolver, webc};
 use derive_more::{Display, From};
 use value_ext::JsonValueExtError;
 
-/// GenAI main Result type alias (with genai::Error)
+/// `GenAI` main Result type alias (with `genai::Error`)
 pub type Result<T> = core::result::Result<T, Error>;
 
-/// Main GenAI error
+/// Main `GenAI` error
 #[derive(Debug, From, Display)]
 #[allow(missing_docs)]
 pub enum Error {

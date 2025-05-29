@@ -38,10 +38,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 	// 3. Make the initial call to get the function call
 	println!("--- Getting function call from model");
-	let chat_res = client.exec_chat(MODEL, chat_req.clone(), None).await?;
+	let response = client.exec_chat(MODEL, chat_req.clone(), None).await?;
 
 	// 4. Extract the tool calls from the response
-	let tool_calls = chat_res.into_tool_calls().ok_or("Expected tool calls in the response")?;
+	let tool_calls = response.first_into_tool_calls().ok_or("Expected tool calls in the response")?;
 
 	println!("--- Tool calls received:");
 	for tool_call in &tool_calls {
@@ -67,10 +67,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 	// 7. Get the final response from the model with the function results
 	println!("\n--- Getting final response with function results");
-	let chat_res = client.exec_chat_stream(MODEL, chat_req, None).await?;
+	let response = client.exec_chat_stream(MODEL, chat_req, None).await?;
 
 	println!("\n--- Final response:");
-	print_chat_stream(chat_res, None).await?;
+	print_chat_stream(response, None).await?;
 
 	Ok(())
 }
