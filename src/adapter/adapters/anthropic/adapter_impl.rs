@@ -66,7 +66,7 @@ impl Adapter for AnthropicAdapter {
 		let base_url = endpoint.base_url();
 		match service_type {
 			ServiceType::Chat | ServiceType::ChatStream => format!("{base_url}messages"),
-			ServiceType::ImageGenerationImagen => {
+			ServiceType::ImageGenerationImagen | ServiceType::VideoGenerationVeo => {
 				// For now, other service types are not supported by Anthropic
 				// This should ideally be caught earlier by the AdapterDispatcher
 				// or a more specific error should be returned.

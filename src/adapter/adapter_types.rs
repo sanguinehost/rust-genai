@@ -67,6 +67,54 @@ pub trait Adapter {
 			feature: "Imagen 3 Image Generation (response data)".to_string(),
 		})
 	}
+
+	/// To be implemented by Adapters supporting Veo Video Generation.
+	#[allow(unused_variables, dead_code)]
+	fn to_veo_generation_request_data(
+		service_target: ServiceTarget,
+		request: crate::chat::VeoGenerateVideosRequest,
+	) -> Result<WebRequestData> {
+		Err(crate::Error::AdapterFeatureNotSupported {
+			adapter_kind: service_target.model.adapter_kind,
+			feature: "Veo Video Generation (request data)".to_string(),
+		})
+	}
+
+	/// To be implemented by Adapters supporting Veo Video Generation.
+	#[allow(unused_variables, dead_code)]
+	fn to_veo_generation_response(
+		model_iden: ModelIden,
+		web_response: WebResponse,
+	) -> Result<crate::chat::VeoGenerateVideosResponse> {
+		Err(crate::Error::AdapterFeatureNotSupported {
+			adapter_kind: model_iden.adapter_kind,
+			feature: "Veo Video Generation (response data)".to_string(),
+		})
+	}
+
+	/// To be implemented by Adapters supporting Veo Video Generation.
+	#[allow(unused_variables, dead_code)]
+	fn get_veo_operation_status_request_data(
+		service_target: ServiceTarget,
+		operation_name: String,
+	) -> Result<WebRequestData> {
+		Err(crate::Error::AdapterFeatureNotSupported {
+			adapter_kind: service_target.model.adapter_kind,
+			feature: "Veo Video Generation (operation status request data)".to_string(),
+		})
+	}
+
+	/// To be implemented by Adapters supporting Veo Video Generation.
+	#[allow(unused_variables, dead_code)]
+	fn to_veo_operation_status_response(
+		model_iden: ModelIden,
+		web_response: WebResponse,
+	) -> Result<crate::chat::VeoOperationStatusResponse> {
+		Err(crate::Error::AdapterFeatureNotSupported {
+			adapter_kind: model_iden.adapter_kind,
+			feature: "Veo Video Generation (operation status response)".to_string(),
+		})
+	}
 }
 
 // region:    --- ServiceType
@@ -76,6 +124,7 @@ pub enum ServiceType {
 	Chat,
 	ChatStream,
 	ImageGenerationImagen, // For Imagen 3
+	VideoGenerationVeo,    // For Veo
 }
 
 // endregion: --- ServiceType

@@ -112,7 +112,7 @@ impl AdapterKind {
 			Ok(Self::Anthropic)
 		} else if model.starts_with("command") {
 			Ok(Self::Cohere)
-		} else if model.starts_with("gemini") || model.starts_with("imagen") {
+		} else if model.starts_with("gemini") || model.starts_with("imagen") || model.starts_with("veo") {
 			Ok(Self::Gemini)
 		} else if model.starts_with("grok") {
 			Ok(Self::Xai)

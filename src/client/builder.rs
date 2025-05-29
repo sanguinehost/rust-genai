@@ -108,3 +108,23 @@ impl ClientBuilder {
 		Client { inner: Arc::new(inner) }
 	}
 }
+
+impl Client {
+	/// Executes a Veo video generation request.
+	pub async fn generate_videos(
+		&self,
+		model: &str, // e.g., "veo-2.0-generate-001"
+		request: crate::chat::VeoGenerateVideosRequest,
+	) -> crate::Result<crate::chat::VeoGenerateVideosResponse> {
+		self.exec_generate_videos_veo(model, request).await
+	}
+
+	/// Executes a request to get the status of a Veo video generation operation.
+	pub async fn get_veo_operation_status(
+		&self,
+		model: &str, // The model used for the original generation, e.g., "veo-2.0-generate-001"
+		operation_name: String,
+	) -> crate::Result<crate::chat::VeoOperationStatusResponse> {
+		self.exec_get_veo_operation_status(model, operation_name).await
+	}
+}

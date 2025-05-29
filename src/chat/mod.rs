@@ -13,6 +13,7 @@ pub mod imagen_types;
 mod message_content;
 mod tool;
 mod usage; // Added for Imagen 3 types
+pub mod veo_types;
 
 // -- Flatten
 pub use chat_message::*;
@@ -25,6 +26,7 @@ pub use imagen_types::*;
 pub use message_content::*;
 pub use tool::*;
 pub use usage::*; // And re-export them
+pub use veo_types::*;
 
 pub mod printer;
 

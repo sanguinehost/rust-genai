@@ -148,7 +148,7 @@ impl OpenAIAdapter {
 		let base_url = default_endpoint.base_url();
 		match service_type {
 			ServiceType::Chat | ServiceType::ChatStream => format!("{base_url}chat/completions"),
-			ServiceType::ImageGenerationImagen => {
+			ServiceType::ImageGenerationImagen | ServiceType::VideoGenerationVeo => {
 				// For now, other service types are not supported by OpenAI
 				panic!("ServiceType {service_type:?} not supported for OpenAIAdapter");
 			}

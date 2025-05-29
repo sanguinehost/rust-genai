@@ -1,8 +1,8 @@
 use crate::adapter::{AdapterDispatcher, AdapterKind, ServiceType, WebRequestData};
 use crate::chat::{
 	ChatOptions, ChatOptionsSet, ChatRequest, ChatResponse, ChatStreamResponse, ImagenGenerateImagesRequest,
-	ImagenGenerateImagesResponse,
-}; // Added Imagen types
+	ImagenGenerateImagesResponse, VeoGenerateVideosRequest, VeoGenerateVideosResponse, VeoOperationStatusResponse,
+}; // Added Imagen and Veo types
 use crate::resolver::AuthData;
 use crate::{Client, Error, ModelIden, Result, ServiceTarget};
 
@@ -141,6 +141,61 @@ impl Client {
 			})?;
 
 		let response = AdapterDispatcher::to_imagen_generation_response(target.model, web_res)?;
+
+		Ok(response)
+	}
+
+	/// Executes a Veo video generation request.
+	pub async fn exec_generate_videos_veo(
+		&self,
+		model: &str, // e.g., "veo-2.0-generate-001"
+		request: VeoGenerateVideosRequest,
+	) -> Result<VeoGenerateVideosResponse> {
+		let model_iden = self.default_model(model)?;
+		let target = self.config().resolve_service_target(model_iden.clone()).await?;
+
+		let web_request_data = AdapterDispatcher::to_veo_generation_request_data(target.clone(), request)?;
+
+		let web_res = self
+			.web_client()
+			.do_post(
+				&web_request_data.url,
+				&web_request_data.headers,
+				web_request_data.payload,
+			)
+			.await
+			.map_err(|webc_error| Error::WebModelCall {
+				model_iden: target.model.clone(),
+				webc_error,
+			})?;
+
+		let response = AdapterDispatcher::to_veo_generation_response(target.model, web_res)?;
+
+		Ok(response)
+	}
+
+	/// Executes a request to get the status of a Veo video generation operation.
+	pub async fn exec_get_veo_operation_status(
+		&self,
+		model: &str, // The model used for the original generation, e.g., "veo-2.0-generate-001"
+		operation_name: String,
+	) -> Result<VeoOperationStatusResponse> {
+		let model_iden = self.default_model(model)?;
+		let target = self.config().resolve_service_target(model_iden.clone()).await?;
+
+		let web_request_data =
+			AdapterDispatcher::get_veo_operation_status_request_data(target.clone(), &operation_name)?;
+
+		let web_res = self
+			.web_client()
+			.do_get(&web_request_data.url, &web_request_data.headers)
+			.await
+			.map_err(|webc_error| Error::WebModelCall {
+				model_iden: target.model.clone(),
+				webc_error,
+			})?;
+
+		let response = AdapterDispatcher::to_veo_operation_status_response(target.model, web_res)?;
 
 		Ok(response)
 	}

@@ -8,7 +8,7 @@ use crate::adapter::{Adapter, AdapterKind, ServiceType, WebRequestData};
 use crate::chat::{
 	ChatOptionsSet, ChatRequest, ChatResponse, ChatStreamResponse, ImagenGenerateImagesRequest,
 	ImagenGenerateImagesResponse,
-}; // Added Imagen types
+}; // Added Imagen and Veo types
 use crate::webc::WebResponse;
 use crate::{Error, Result, ServiceTarget}; // Added Error
 use reqwest::RequestBuilder;
@@ -159,6 +159,63 @@ impl AdapterDispatcher {
 			_ => Err(Error::AdapterFeatureNotSupported {
 				adapter_kind,
 				feature: "Imagen 3 Image Generation (response data)".to_string(),
+			}),
+		}
+	}
+
+	// -- Veo specific --
+	pub fn to_veo_generation_request_data(
+		target: ServiceTarget,
+		request: crate::chat::VeoGenerateVideosRequest,
+	) -> Result<WebRequestData> {
+		let adapter_kind = target.model.adapter_kind;
+		match adapter_kind {
+			AdapterKind::Gemini => GeminiAdapter::to_veo_generation_request_data(target, request),
+			_ => Err(Error::AdapterFeatureNotSupported {
+				adapter_kind,
+				feature: "Veo Video Generation (request data)".to_string(),
+			}),
+		}
+	}
+
+	pub fn to_veo_generation_response(
+		model_iden: ModelIden,
+		web_response: WebResponse,
+	) -> Result<crate::chat::VeoGenerateVideosResponse> {
+		let adapter_kind = model_iden.adapter_kind;
+		match adapter_kind {
+			AdapterKind::Gemini => GeminiAdapter::to_veo_generation_response(model_iden, web_response),
+			_ => Err(Error::AdapterFeatureNotSupported {
+				adapter_kind,
+				feature: "Veo Video Generation (response data)".to_string(),
+			}),
+		}
+	}
+
+	pub fn get_veo_operation_status_request_data(
+		target: ServiceTarget,
+		operation_name: &str,
+	) -> Result<WebRequestData> {
+		let adapter_kind = target.model.adapter_kind;
+		match adapter_kind {
+			AdapterKind::Gemini => GeminiAdapter::get_veo_operation_status_request_data(target, operation_name),
+			_ => Err(Error::AdapterFeatureNotSupported {
+				adapter_kind,
+				feature: "Veo Video Generation (operation status request data)".to_string(),
+			}),
+		}
+	}
+
+	pub fn to_veo_operation_status_response(
+		model_iden: ModelIden,
+		web_response: WebResponse,
+	) -> Result<crate::chat::VeoOperationStatusResponse> {
+		let adapter_kind = model_iden.adapter_kind;
+		match adapter_kind {
+			AdapterKind::Gemini => GeminiAdapter::to_veo_operation_status_response(model_iden, web_response),
+			_ => Err(Error::AdapterFeatureNotSupported {
+				adapter_kind,
+				feature: "Veo Video Generation (operation status response)".to_string(),
 			}),
 		}
 	}

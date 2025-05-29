@@ -19,6 +19,10 @@ use crate::chat::{
 	ReasoningEffort,
 	ToolCall,
 	Usage,
+	VeoGenerateVideosRequest,
+	VeoGenerateVideosResponse,
+	VeoOperationResult,
+	VeoOperationStatusResponse,
 };
 use crate::resolver::{AuthData, Endpoint};
 use crate::webc::{WebResponse, WebStream};
@@ -37,6 +41,7 @@ const MODELS: &[&str] = &[
 	"gemini-1.5-pro",
 	"gemini-2.0-flash-preview-image-generation",
 	"imagen-3.0-generate-002",
+	"veo-2.0-generate-001",
 ];
 
 // Per gemini doc (https://x.com/jeremychone/status/1916501987371438372)
@@ -78,6 +83,7 @@ impl Adapter for GeminiAdapter {
 			ServiceType::Chat => format!("{base_url}models/{model_name}:generateContent"),
 			ServiceType::ChatStream => format!("{base_url}models/{model_name}:streamGenerateContent"),
 			ServiceType::ImageGenerationImagen => format!("{base_url}models/{model_name}:predict"),
+			ServiceType::VideoGenerationVeo => format!("{base_url}models/{model_name}:predictLongRunning"),
 		}
 	}
 
@@ -737,6 +743,214 @@ impl GeminiAdapter {
 		Ok(ImagenGenerateImagesResponse {
 			generated_images,
 			usage: None, // Imagen API might not provide usage data in the same way as chat
+			model_iden,
+			provider_model_iden,
+		})
+	}
+
+	// -- Veo Specific Methods --
+	pub fn to_veo_generation_request_data(
+		target: ServiceTarget,
+		request: VeoGenerateVideosRequest,
+	) -> Result<WebRequestData> {
+		let ServiceTarget { endpoint, auth, model } = target;
+		let api_key = get_api_key(&auth, &model)?;
+
+		let url = Self::get_service_url(&model, ServiceType::VideoGenerationVeo, endpoint);
+		let url = format!("{url}?key={api_key}");
+
+		let mut instance_content = json!({});
+		if let Some(prompt) = request.prompt {
+			instance_content.x_insert("prompt", prompt)?;
+		}
+		if let Some(image_input) = request.image {
+			// Serialize VeoImageInput and insert it under "image"
+			let image_payload = serde_json::to_value(image_input)?;
+			instance_content.x_insert("image", image_payload)?;
+		}
+
+		let mut parameters = json!({});
+		if let Some(ratio) = &request.aspect_ratio {
+			parameters.x_insert("aspectRatio", ratio)?;
+		}
+		if let Some(pg) = &request.person_generation {
+			parameters.x_insert("personGeneration", pg)?;
+		}
+		if let Some(count) = request.number_of_videos {
+			parameters.x_insert("sampleCount", count)?;
+		}
+		if let Some(duration) = request.duration_seconds {
+			parameters.x_insert("durationSeconds", duration)?;
+		}
+		if let Some(enhance) = request.enhance_prompt {
+			parameters.x_insert("enhancePrompt", enhance)?;
+		}
+		if let Some(neg_prompt) = request.negative_prompt {
+			parameters.x_insert("negativePrompt", neg_prompt)?;
+		}
+
+		let payload = json!({
+			"instances": [instance_content],
+			"parameters": parameters,
+		});
+
+		let headers = vec![("Content-Type".to_string(), "application/json".to_string())];
+
+		let mut redacted_payload = payload.clone();
+		if let Some(instances) = redacted_payload["instances"].as_array_mut() {
+			for instance in instances {
+				// Redact bytes if it exists under image in the instance
+				if let Some(image_obj) = instance.get_mut("image") {
+					if let Some(image_map) = image_obj.as_object_mut() {
+						if image_map.contains_key("bytes") {
+							image_map.insert("bytes".to_string(), Value::String("<redacted>".to_string()));
+						}
+					}
+				}
+			}
+		}
+
+		tracing::trace!(
+			target: "genai_gemini_adapter",
+			"Veo Generation Request Payload: {}",
+			serde_json::to_string_pretty(&redacted_payload).unwrap_or_else(|e| format!("Failed to serialize payload: {e}"))
+		);
+
+		Ok(WebRequestData { url, headers, payload })
+	}
+
+	pub fn to_veo_generation_response(
+		model_iden: ModelIden,
+		mut web_response: WebResponse,
+	) -> Result<VeoGenerateVideosResponse> {
+		let provider_model_name: Option<String> = None; // Veo predict API might not return this in the same way
+		let provider_model_iden = model_iden.from_optional_name(provider_model_name);
+
+		// The initial response for Veo is a long-running operation name.
+		// { "name": "operations/..." }
+		let operation_name = web_response.body.x_take::<String>("name")?;
+
+		Ok(VeoGenerateVideosResponse {
+			operation_name,
+			model_iden,
+			provider_model_iden,
+		})
+	}
+
+	pub fn get_veo_operation_status_request_data(
+		target: ServiceTarget,
+		operation_name: &str,
+	) -> Result<WebRequestData> {
+		let ServiceTarget { endpoint, auth, model } = target;
+		let api_key = get_api_key(&auth, &model)?;
+
+		// The URL for polling an operation is different: BASE_URL/operations/{operation_name}?key={API_KEY}
+		let base_url = endpoint.base_url();
+		let url = format!("{base_url}{operation_name}?key={api_key}");
+
+		let headers = vec![]; // No specific headers needed for GET
+		let payload = json!({}); // No payload for GET
+
+		tracing::trace!(
+			target: "genai_gemini_adapter",
+			"Veo Get Operation Status Request URL: {}, Payload: {}",
+			url,
+			serde_json::to_string_pretty(&payload).unwrap_or_else(|e| format!("Failed to serialize payload: {e}"))
+		);
+
+		Ok(WebRequestData { url, headers, payload })
+	}
+
+	pub fn to_veo_operation_status_response(
+		model_iden: ModelIden,
+		mut web_response: WebResponse,
+	) -> Result<VeoOperationStatusResponse> {
+		tracing::trace!(
+			target: "genai_gemini_adapter",
+			"Veo Operation Status Polling Response Body: {}",
+			serde_json::to_string_pretty(&web_response.body).unwrap_or_else(|e| format!("Failed to serialize body: {e}"))
+		);
+		let provider_model_name: Option<String> = None;
+		let provider_model_iden = model_iden.from_optional_name(provider_model_name);
+
+		// Check for a top-level error object first. If present, it's an API error response.
+		if let Ok(error_value) = web_response.body.x_take::<Value>("error") {
+			return Err(Error::WebModelCall {
+				model_iden,
+				webc_error: crate::webc::Error::ResponseFailedStatus {
+					status: reqwest::StatusCode::BAD_REQUEST, // Use appropriate StatusCode
+					body: error_value.to_string(),
+				},
+			});
+		}
+
+		// If no top-level error, proceed to parse the expected operation status fields.
+		// We need to clone the body if we want to log it fully in case of multiple parsing errors,
+		// as x_take consumes parts of it. For now, log what's available at point of error.
+		// Try to parse 'done'. If not found, assume false. If other parsing error, return Err.
+		let actual_done = match web_response.body.x_take::<bool>("done") {
+			Ok(d_val) => d_val,
+			Err(ref e) if matches!(e, value_ext::JsonValueExtError::PropertyNotFound(_)) => {
+				// Log that 'done' was not found and we're defaulting to false.
+				// The body state here will be *after* attempting to take 'done'.
+				eprintln!(
+					"GeminiAdapter::to_veo_operation_status_response - 'done' field not found in polling response, assuming not completed. Body after attempt to take 'done': {:?}. Original error: {}",
+					web_response.body, e
+				);
+				false // Assume not done if the field is missing
+			}
+			Err(e) => {
+				// For any other error (e.g., WrongType), it's a genuine parsing problem.
+				eprintln!(
+					"GeminiAdapter::to_veo_operation_status_response - Error parsing 'done' field (not PropertyNotFound). Body after attempt to take 'done': {:?}. Error: {}",
+					web_response.body, e
+				);
+				return Err(Error::from(e));
+			}
+		};
+
+		// 'name' should always be present in operation status responses.
+		let name = web_response.body.x_take::<String>("name").map_err(|e| {
+			eprintln!(
+				"GeminiAdapter::to_veo_operation_status_response - Error parsing 'name' field. Current body state (after 'done' processing): {:?}. Error: {}",
+				web_response.body, e
+			);
+			Error::from(e)
+		})?;
+
+		// This 'error' field is part of the operation object itself, distinct from the top-level 'error'
+		// checked at the beginning of this function. It indicates an error with the async operation.
+		let operation_error_value = web_response.body.x_take::<Value>("error").ok();
+
+		let response_result = if actual_done {
+			if operation_error_value.is_some() {
+				// If the operation is done and there's an error field, no successful response is expected.
+				None
+			} else {
+				// If done and no operation_error_value, try to parse the successful response.
+				match web_response.body.x_take::<VeoOperationResult>("response") {
+					Ok(res) => Some(res),
+					Err(e) => {
+						// This case means done=true, no operation_error_value, but 'response' field is missing or malformed.
+						eprintln!(
+							"GeminiAdapter::to_veo_operation_status_response - Error parsing 'response' field when done=true and no operation error. Current body state: {:?}. Error: {:?}",
+							web_response.body, e
+						);
+						// Propagate the error instead of returning None for the response.
+						return Err(Error::from(e));
+					}
+				}
+			}
+		} else {
+			// Not done yet.
+			None
+		};
+
+		Ok(VeoOperationStatusResponse {
+			done: actual_done,
+			name,
+			response: response_result,
+			error: operation_error_value, // This is the error from the operation object
 			model_iden,
 			provider_model_iden,
 		})
