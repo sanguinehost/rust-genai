@@ -1,5 +1,12 @@
 `.` minor | `-` Fix | `+` Addition | `^` improvement | `!` Change | `*` Refactor
 
+## 2025-05-30 - [v0.3.6](https://github.com/jeremychone/rust-genai/compare/v0.3.5...v0.3.6)
+
++ `+` Chat - Add document understanding and generalize media handling
++ `+` Gemini/OpenAI - Add structured response formats and update adapters
++ `+` Google Veo - Add video generation support
++ `+` Gemini - Implement Imagen 3 and conversational image generation
++ `^` Gemini - Add advanced API options & multi-candidate support
 
 ## 2025-05-26 - [v0.3.5](https://github.com/jeremychone/rust-genai/compare/v0.3.4...v0.3.5)
 
@@ -285,11 +292,3 @@
 - `+` Added AdapterKindResolver
 - `-` Adapter::list_models api impl and change
 - `^` chat_printer - added PrintChatStreamOptions with print_events
-
-## 2025-05-30 - [v0.3.6](https://github.com/jeremychone/rust-genai/compare/v0.3.5...v0.3.6)
-
-+ `+` Chat - Add document understanding and generalize media handling
-+ `+` Gemini/OpenAI - Add structured response formats and update adapters
-+ `+` Google Veo - Add video generation support
-+ `+` Gemini - Implement Imagen 3 and conversational image generation
-+ `^` Gemini - Add advanced API options & multi-candidate support
