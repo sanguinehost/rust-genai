@@ -1,5 +1,4 @@
 use crate::adapter::adapters::support::{StreamerCapturedData, StreamerOptions};
-use crate::adapter::gemini::{GeminiAdapter, GeminiChatResponse};
 use crate::adapter::inter_stream::{InterStreamEnd, InterStreamEvent};
 use crate::chat::ChatOptionsSet;
 use crate::webc::WebStream;
@@ -7,8 +6,6 @@ use crate::{Error, ModelIden, Result};
 use serde_json::Value;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-
-use super::GeminiChatContent;
 
 pub struct GeminiStreamer {
 	inner: WebStream,
@@ -21,7 +18,7 @@ pub struct GeminiStreamer {
 }
 
 impl GeminiStreamer {
-	pub fn new(inner: WebStream, model_iden: ModelIden, options_set: &ChatOptionsSet<'_, '_>) -> Self {
+	pub fn new(inner: WebStream, model_iden: ModelIden, options_set: &ChatOptionsSet) -> Self {
 		Self {
 			inner,
 			done: false,
@@ -74,17 +71,19 @@ impl futures::Stream for GeminiStreamer {
 							};
 
 							// -- Extract the Gemini Response
-							let gemini_response =
-								match GeminiAdapter::body_to_gemini_chat_response(&self.options.model_iden, json_block)
-								{
-									Ok(gemini_response) => gemini_response,
-									Err(err) => {
-										tracing::error!("Gemini Adapter Stream Error: {}", err);
-										return Poll::Ready(Some(Err(err)));
-									}
-								};
+							let gemini_response = match super::GeminiAdapter::body_to_gemini_chat_response(
+								&self.options.model_iden,
+								json_block,
+								&ChatOptionsSet::default(), // Pass default options_set in streaming
+							) {
+								Ok(gemini_response) => gemini_response,
+								Err(err) => {
+									tracing::error!("Gemini Adapter Stream Error: {}", err);
+									return Poll::Ready(Some(Err(err)));
+								}
+							};
 
-							let GeminiChatResponse { contents, usage } = gemini_response;
+							let super::GeminiChatResponse { contents, usage } = gemini_response;
 
 							// For streaming with InterStreamEvent::Chunk(String), we process only the text from the first candidate.
 							let first_content = contents.into_iter().next();
@@ -95,7 +94,20 @@ impl futures::Stream for GeminiStreamer {
 							}
 
 							match first_content {
-								Some(GeminiChatContent::Text(text_content)) => {
+								Some(super::GeminiChatContent::Parts(parts)) => {
+									// Extract text content from parts for streaming
+									let text_content: String = parts
+										.into_iter()
+										.filter_map(|part| match part {
+											crate::chat::ContentPart::Text(text) => Some(text),
+											crate::chat::ContentPart::Image { .. } => None, // Ignore image parts for streaming chunks
+										})
+										.collect();
+
+									if text_content.is_empty() {
+										// No text content from the first candidate, usage already updated. Skip emitting an empty chunk.
+										continue; // Go to next item from WebStream
+									}
 									// Capture content text if option is set
 									if self.options.capture_content {
 										match self.captured_data.content {
@@ -106,7 +118,7 @@ impl futures::Stream for GeminiStreamer {
 									// This is the event to return for this branch of the outer match
 									InterStreamEvent::Chunk(text_content)
 								}
-								Some(GeminiChatContent::ToolCall(tool_call)) => {
+								Some(super::GeminiChatContent::ToolCall(tool_call)) => {
 									tracing::warn!(
 										"GeminiStreamer received a ToolCall in a stream chunk: {:?}. This will not be emitted as InterStreamEvent::Chunk.",
 										tool_call

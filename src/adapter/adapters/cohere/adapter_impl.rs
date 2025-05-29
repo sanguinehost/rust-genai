@@ -1,5 +1,5 @@
+use super::streamer::CohereStreamer;
 use crate::adapter::adapters::support::get_api_key;
-use crate::adapter::cohere::CohereStreamer;
 use crate::adapter::{Adapter, AdapterKind, ServiceType, WebRequestData};
 use crate::chat::{
 	ChatOptionsSet, ChatRequest, ChatResponse, ChatRole, ChatStream, ChatStreamResponse, MessageContent, Usage,
@@ -46,6 +46,10 @@ impl Adapter for CohereAdapter {
 		let base_url = endpoint.base_url();
 		match service_type {
 			ServiceType::Chat | ServiceType::ChatStream => format!("{base_url}chat"),
+			ServiceType::ImageGenerationImagen => {
+				// For now, other service types are not supported by Cohere
+				panic!("ServiceType {service_type:?} not supported for CohereAdapter");
+			}
 		}
 	}
 

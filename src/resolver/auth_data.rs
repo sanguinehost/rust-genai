@@ -1,7 +1,7 @@
 use crate::resolver::{Error, Result};
 use std::collections::HashMap;
 /// `AuthData` specifies either how or the key itself for an authentication resolver call.
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub enum AuthData {
 	/// Specify the environment name to get the key value from.
 	FromEnv(String),

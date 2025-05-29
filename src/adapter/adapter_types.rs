@@ -43,6 +43,30 @@ pub trait Adapter {
 		reqwest_builder: RequestBuilder,
 		options_set: ChatOptionsSet<'_, '_>,
 	) -> Result<ChatStreamResponse>;
+
+	/// To be implemented by Adapters supporting Imagen 3.
+	#[allow(unused_variables, dead_code)]
+	fn to_imagen_generation_request_data(
+		service_target: ServiceTarget,
+		request: crate::chat::ImagenGenerateImagesRequest,
+	) -> Result<WebRequestData> {
+		Err(crate::Error::AdapterFeatureNotSupported {
+			adapter_kind: service_target.model.adapter_kind,
+			feature: "Imagen 3 Image Generation (request data)".to_string(),
+		})
+	}
+
+	/// To be implemented by Adapters supporting Imagen 3.
+	#[allow(unused_variables, dead_code)]
+	fn to_imagen_generation_response(
+		model_iden: ModelIden,
+		web_response: WebResponse,
+	) -> Result<crate::chat::ImagenGenerateImagesResponse> {
+		Err(crate::Error::AdapterFeatureNotSupported {
+			adapter_kind: model_iden.adapter_kind,
+			feature: "Imagen 3 Image Generation (response data)".to_string(),
+		})
+	}
 }
 
 // region:    --- ServiceType
@@ -51,6 +75,7 @@ pub trait Adapter {
 pub enum ServiceType {
 	Chat,
 	ChatStream,
+	ImageGenerationImagen, // For Imagen 3
 }
 
 // endregion: --- ServiceType

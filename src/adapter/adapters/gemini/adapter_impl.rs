@@ -1,9 +1,23 @@
+use super::streamer::GeminiStreamer;
 use crate::adapter::adapters::support::get_api_key;
-use crate::adapter::gemini::GeminiStreamer;
 use crate::adapter::{Adapter, AdapterKind, ServiceType, WebRequestData};
 use crate::chat::{
-	ChatOptionsSet, ChatRequest, ChatResponse, ChatResponseFormat, ChatRole, ChatStream, ChatStreamResponse,
-	CompletionTokensDetails, ContentPart, ImageSource, MessageContent, PromptTokensDetails, ReasoningEffort, ToolCall,
+	ChatOptionsSet,
+	ChatRequest,
+	ChatResponse,
+	ChatResponseFormat,
+	ChatRole,
+	ChatStream,
+	ChatStreamResponse,
+	CompletionTokensDetails,
+	ContentPart,
+	ImageSource,
+	ImagenGenerateImagesRequest,
+	ImagenGenerateImagesResponse, // Added for Imagen
+	MessageContent,
+	PromptTokensDetails,
+	ReasoningEffort,
+	ToolCall,
 	Usage,
 };
 use crate::resolver::{AuthData, Endpoint};
@@ -21,6 +35,8 @@ const MODELS: &[&str] = &[
 	"gemini-2.5-flash-preview-05-20",
 	"gemini-2.5-pro-preview-05-06",
 	"gemini-1.5-pro",
+	"gemini-2.0-flash-preview-image-generation",
+	"imagen-3.0-generate-002",
 ];
 
 // Per gemini doc (https://x.com/jeremychone/status/1916501987371438372)
@@ -61,10 +77,12 @@ impl Adapter for GeminiAdapter {
 		match service_type {
 			ServiceType::Chat => format!("{base_url}models/{model_name}:generateContent"),
 			ServiceType::ChatStream => format!("{base_url}models/{model_name}:streamGenerateContent"),
+			ServiceType::ImageGenerationImagen => format!("{base_url}models/{model_name}:predict"),
 		}
 	}
 
 	#[allow(clippy::too_many_lines)]
+	#[allow(clippy::cognitive_complexity)]
 	fn to_web_request_data(
 		target: ServiceTarget,
 		service_type: ServiceType,
@@ -234,6 +252,13 @@ impl Adapter for GeminiAdapter {
 			payload.x_insert("toolConfig", tool_config_payload)?;
 		}
 
+		// -- Response Modalities (for Gemini image generation)
+		if let Some(modalities) = options_set.response_modalities() {
+			if !modalities.is_empty() {
+				payload.x_insert("/generationConfig/responseModalities", modalities)?;
+			}
+		}
+
 		// -- url
 		// NOTE: Somehow, Google decided to put the API key in the URL.
 		//       This should be considered an antipattern from a security point of view
@@ -248,7 +273,7 @@ impl Adapter for GeminiAdapter {
 	fn to_chat_response(
 		model_iden: ModelIden,
 		web_response: WebResponse,
-		_options_set: ChatOptionsSet<'_, '_>,
+		options_set: ChatOptionsSet<'_, '_>,
 	) -> Result<ChatResponse> {
 		let WebResponse { mut body, .. } = web_response;
 		// -- Capture the provider_model_iden
@@ -256,17 +281,13 @@ impl Adapter for GeminiAdapter {
 		let provider_model_name: Option<String> = body.x_remove("modelVersion").ok();
 		let provider_model_iden = model_iden.from_optional_name(provider_model_name);
 
-		let gemini_response = Self::body_to_gemini_chat_response(&model_iden, body)?;
+		let gemini_response = Self::body_to_gemini_chat_response(&model_iden, body, &options_set)?;
 		let GeminiChatResponse { contents, usage } = gemini_response;
 
 		// Map Vec<GeminiChatContent> to Vec<MessageContent>
-		let response_contents: Vec<MessageContent> = contents
-			.into_iter()
-			.map(|gemini_content| match gemini_content {
-				GeminiChatContent::Text(text) => MessageContent::from_text(text),
-				GeminiChatContent::ToolCall(tool_call) => MessageContent::from_tool_calls(vec![tool_call]),
-			})
-			.collect();
+		// Each GeminiChatContent now directly corresponds to a MessageContent
+		// (as GeminiChatContent can hold multiple parts or a tool call)
+		let response_contents: Vec<MessageContent> = contents.into_iter().map(Into::into).collect();
 
 		// If the original request was for a single candidate (or default),
 		// and we got no content, the response_contents vec will be empty.
@@ -302,7 +323,11 @@ impl Adapter for GeminiAdapter {
 
 /// Support functions for `GeminiAdapter`
 impl GeminiAdapter {
-	pub(super) fn body_to_gemini_chat_response(model_iden: &ModelIden, mut body: Value) -> Result<GeminiChatResponse> {
+	pub(super) fn body_to_gemini_chat_response(
+		model_iden: &ModelIden,
+		mut body: Value,
+		options_set: &ChatOptionsSet<'_, '_>,
+	) -> Result<GeminiChatResponse> {
 		// If the body has an `error` property, then it is assumed to be an error.
 		if body.get("error").is_some() {
 			return Err(Error::StreamEventError {
@@ -316,35 +341,55 @@ impl GeminiAdapter {
 		let mut gemini_contents: Vec<GeminiChatContent> = Vec::new();
 
 		for mut candidate_json in candidates {
-			// Process each candidate to extract its content part
-			// Assuming content is in /content/parts/0 as before for each candidate
-			match candidate_json.x_take::<Value>("/content/parts/0") {
-				Ok(mut response_part) => {
-					let content = response_part.x_take::<Value>("functionCall").map_or_else(
-						|_| {
-							response_part
-								.x_take::<Value>("text")
-								.ok()
-								.and_then(|v| v.as_str().map(String::from))
-								.map(GeminiChatContent::Text)
-						},
-						|f| {
-							Some(GeminiChatContent::ToolCall(ToolCall {
-								call_id: f.x_get("name").unwrap_or_else(|_| String::new()),
-								fn_name: f.x_get("name").unwrap_or_else(|_| String::new()),
-								fn_arguments: f.x_get("args").unwrap_or(Value::Null),
-							}))
-						},
-					);
-					if let Some(content_item) = content {
-						gemini_contents.push(content_item);
-					}
+			// A candidate can have multiple parts (text, image) or a functionCall.
+			let candidate_content_parts_json = candidate_json.x_take::<Vec<Value>>("/content/parts")?;
+			let mut content_parts: Vec<ContentPart> = Vec::new();
+			let mut has_image_content = false;
+
+			for mut part_json in candidate_content_parts_json {
+				if let Ok(fc_json) = part_json.x_take::<Value>("functionCall") {
+					// This part is a function call
+					gemini_contents.push(GeminiChatContent::ToolCall(ToolCall {
+						call_id: fc_json.x_get("name").unwrap_or_else(|_| String::new()), // Assuming name is used as call_id for Gemini
+						fn_name: fc_json.x_get("name").unwrap_or_else(|_| String::new()),
+						fn_arguments: fc_json.x_get("args").unwrap_or(Value::Null),
+					}));
+					// Assuming a functionCall part is exclusive in a candidate's content.parts array for simplicity here.
+					// If not, the logic to combine with other parts would be more complex.
+					content_parts.clear(); // Clear any previously parsed text/image parts for this candidate
+					break; // Move to the next candidate
+				} else if let Ok(text) = part_json.x_take::<String>("text") {
+					content_parts.push(ContentPart::Text(text));
+				} else if let Ok(mut inline_data_json) = part_json.x_take::<Value>("inlineData") {
+					let mime_type = inline_data_json.x_take::<String>("mimeType")?;
+					let data = inline_data_json.x_take::<String>("data")?;
+					content_parts.push(ContentPart::Image {
+						content_type: mime_type,
+						source: ImageSource::Base64(data.into()),
+					});
+					has_image_content = true;
 				}
-				Err(e) => {
-					// Log or handle error if a candidate has no processable content part
-					// For now, we can skip this candidate or return an error
-					println!("Warning: Could not process content for a candidate: {candidate_json:?}. Error: {e}");
+				// Potentially other part types like `fileData` could be handled here if needed.
+			}
+
+			if !content_parts.is_empty() {
+				// If response_modalities requested an image but none was found in this candidate's parts
+				if options_set
+					.response_modalities()
+					.is_some_and(|m| m.contains(&"IMAGE".to_string()))
+					&& !has_image_content
+				{
+					// Add a warning part, as per user preference
+					content_parts.push(ContentPart::Text(
+						"[WARN] Image was requested but not generated for this candidate.".to_string(),
+					));
 				}
+				gemini_contents.push(GeminiChatContent::Parts(content_parts));
+			} else if !gemini_contents.iter().any(|gc| matches!(gc, GeminiChatContent::ToolCall(_))) {
+				// If no parts were processed and it wasn't a tool call, it might be an error or empty response for this candidate
+				println!(
+					"Warning: Candidate resulted in no processable content (text, image, or tool_call): {candidate_json:?}"
+				);
 			}
 		}
 
@@ -624,6 +669,78 @@ impl GeminiAdapter {
 			tools,
 		})
 	}
+
+	// -- Imagen 3 Specific Methods --
+	pub fn to_imagen_generation_request_data(
+		target: ServiceTarget,
+		request: ImagenGenerateImagesRequest,
+	) -> Result<WebRequestData> {
+		let ServiceTarget { endpoint, auth, model } = target;
+		let api_key = get_api_key(&auth, &model)?;
+
+		let url = Self::get_service_url(&model, ServiceType::ImageGenerationImagen, endpoint);
+		let url = format!("{url}?key={api_key}");
+
+		// Construct the payload for Imagen 3
+		// The request struct `ImagenGenerateImagesRequest` is already designed
+		// to serialize into the format Imagen expects for the "instances" part.
+		// We need to wrap it in an "instances" array and add "parameters".
+		let mut parameters = json!({});
+		if let Some(count) = request.number_of_images {
+			parameters.x_insert("sampleCount", count)?;
+		}
+		if let Some(ratio) = &request.aspect_ratio {
+			parameters.x_insert("aspectRatio", ratio)?;
+		}
+		if let Some(pg) = &request.person_generation {
+			parameters.x_insert("personGeneration", pg)?;
+		}
+		if let Some(seed) = request.seed {
+			parameters.x_insert("seed", seed)?;
+		}
+		// Negative prompt is part of the main request struct for Imagen, not parameters.
+
+		let instance_payload = serde_json::to_value(request)?;
+
+		let payload = json!({
+			"instances": [instance_payload],
+			"parameters": parameters,
+		});
+
+		let headers = vec![("Content-Type".to_string(), "application/json".to_string())];
+
+		Ok(WebRequestData { url, headers, payload })
+	}
+
+	pub fn to_imagen_generation_response(
+		model_iden: ModelIden,
+		mut web_response: WebResponse,
+	) -> Result<ImagenGenerateImagesResponse> {
+		let provider_model_name: Option<String> = None; // Imagen predict API might not return this in the same way
+		let provider_model_iden = model_iden.from_optional_name(provider_model_name);
+
+		// The Imagen response has a `predictions` array.
+		// Each item in `predictions` should match `ImagenGeneratedImage` structure.
+		// {
+		//   "predictions": [
+		//     {
+		//       "bytesBase64Encoded": "...",
+		//       "seed": 12345,
+		//       "finishReason": "DONE"
+		//     }
+		//   ]
+		// }
+		let generated_images = web_response
+			.body
+			.x_take::<Vec<crate::chat::ImagenGeneratedImage>>("predictions")?;
+
+		Ok(ImagenGenerateImagesResponse {
+			generated_images,
+			usage: None, // Imagen API might not provide usage data in the same way as chat
+			model_iden,
+			provider_model_iden,
+		})
+	}
 }
 
 // struct Gemini
@@ -634,8 +751,30 @@ pub(super) struct GeminiChatResponse {
 }
 
 pub(super) enum GeminiChatContent {
-	Text(String),
+	Parts(Vec<ContentPart>),
 	ToolCall(ToolCall),
+	// Note: A simple Text variant might be redundant if Parts can contain a single Text part.
+	// However, keeping it might simplify some direct text-only response scenarios if they exist.
+	// For now, focusing on Parts for flexibility with multi-modal and ToolCall.
+}
+
+impl From<GeminiChatContent> for MessageContent {
+	fn from(gemini_content: GeminiChatContent) -> Self {
+		match gemini_content {
+			GeminiChatContent::Parts(parts) => {
+				// For backward compatibility, if we have a single text part, convert to Text
+				if parts.len() == 1 {
+					match &parts[0] {
+						ContentPart::Text(text) => Self::Text(text.clone()),
+						ContentPart::Image { .. } => Self::Parts(parts),
+					}
+				} else {
+					Self::Parts(parts)
+				}
+			}
+			GeminiChatContent::ToolCall(tool_call) => Self::ToolCalls(vec![tool_call]),
+		}
+	}
 }
 
 struct GeminiChatRequestParts {

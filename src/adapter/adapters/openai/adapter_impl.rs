@@ -1,5 +1,5 @@
+use super::streamer::OpenAIStreamer;
 use crate::adapter::adapters::support::get_api_key;
-use crate::adapter::openai::OpenAIStreamer;
 use crate::adapter::{Adapter, AdapterDispatcher, AdapterKind, ServiceType, WebRequestData};
 use crate::chat::{
 	ChatOptionsSet, ChatRequest, ChatResponse, ChatResponseFormat, ChatRole, ChatStream, ChatStreamResponse,
@@ -148,6 +148,10 @@ impl OpenAIAdapter {
 		let base_url = default_endpoint.base_url();
 		match service_type {
 			ServiceType::Chat | ServiceType::ChatStream => format!("{base_url}chat/completions"),
+			ServiceType::ImageGenerationImagen => {
+				// For now, other service types are not supported by OpenAI
+				panic!("ServiceType {service_type:?} not supported for OpenAIAdapter");
+			}
 		}
 	}
 

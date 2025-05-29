@@ -93,7 +93,7 @@ impl AdapterKind {
 	///  - `OpenAI`     - `starts_with` "gpt", "o3", "o1", "chatgpt"
 	///  - `Anthropic`  - `starts_with` "claude"
 	///  - `Cohere`     - `starts_with` "command"
-	///  - `Gemini`     - `starts_with` "gemini"
+	///  - `Gemini`     - `starts_with` "gemini" or "imagen"
 	///  - `Groq`       - model in Groq models
 	///  - `DeepSeek`   - model in `DeepSeek` models (deepseek.com)
 	///  - `Ollama`     - For anything else
@@ -112,7 +112,7 @@ impl AdapterKind {
 			Ok(Self::Anthropic)
 		} else if model.starts_with("command") {
 			Ok(Self::Cohere)
-		} else if model.starts_with("gemini") {
+		} else if model.starts_with("gemini") || model.starts_with("imagen") {
 			Ok(Self::Gemini)
 		} else if model.starts_with("grok") {
 			Ok(Self::Xai)

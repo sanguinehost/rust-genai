@@ -71,6 +71,10 @@ pub struct ChatOptions {
 	pub function_calling_mode: Option<String>,
 	/// Corresponds to `toolConfig.functionCallingConfig.allowedFunctionNames` in Gemini.
 	pub allowed_function_names: Option<Vec<String>>,
+
+	/// Corresponds to `generationConfig.responseModalities` in Gemini.
+	/// E.g., `vec!["TEXT".to_string(), "IMAGE".to_string()]`
+	pub response_modalities: Option<Vec<String>>,
 }
 
 /// Chainable Setters
@@ -191,6 +195,12 @@ impl ChatOptions {
 		self
 	}
 
+	#[must_use]
+	pub fn with_response_modalities(mut self, values: Vec<String>) -> Self {
+		self.response_modalities = Some(values);
+		self
+	}
+
 	// -- Deprecated
 
 	/// Set the `json_mode` for this request.
@@ -305,7 +315,7 @@ impl std::str::FromStr for ReasoningEffort {
 ///
 /// First, it attempts to get the value at the chat level (`ChatOptions` from the `exec_chat`...(...) argument).
 /// If a value for the property is not found, it looks at the client default one.
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct ChatOptionsSet<'a, 'b> {
 	client: Option<&'a ChatOptions>,
 	chat: Option<&'b ChatOptions>,
@@ -463,6 +473,13 @@ impl ChatOptionsSet<'_, '_> {
 		self.chat
 			.and_then(|chat| chat.allowed_function_names.as_ref())
 			.or_else(|| self.client.and_then(|client| client.allowed_function_names.as_ref()))
+	}
+
+	#[must_use]
+	pub fn response_modalities(&self) -> Option<&Vec<String>> {
+		self.chat
+			.and_then(|chat| chat.response_modalities.as_ref())
+			.or_else(|| self.client.and_then(|client| client.response_modalities.as_ref()))
 	}
 }
 

@@ -24,7 +24,7 @@ pub struct StreamerOptions {
 }
 
 impl StreamerOptions {
-	pub fn new(model_iden: ModelIden, options_set: &ChatOptionsSet<'_, '_>) -> Self {
+	pub fn new(model_iden: ModelIden, options_set: &ChatOptionsSet) -> Self {
 		Self {
 			capture_usage: options_set.capture_usage().unwrap_or(false),
 			capture_content: options_set.capture_content().unwrap_or(false),

@@ -21,7 +21,7 @@ pub struct CohereStreamer {
 }
 
 impl CohereStreamer {
-	pub fn new(inner: WebStream, model_iden: ModelIden, options_set: &ChatOptionsSet<'_, '_>) -> Self {
+	pub fn new(inner: WebStream, model_iden: ModelIden, options_set: &ChatOptionsSet) -> Self {
 		Self {
 			inner,
 			done: false,
@@ -70,15 +70,15 @@ impl futures::Stream for CohereStreamer {
 							let inter_event = match cohere_message.event_type.as_str() {
 								"stream-start" => InterStreamEvent::Start,
 								"text-generation" => {
-									if let Some(content) = cohere_message.text {
+									if let Some(content) = cohere_message.text.as_ref() {
 										// Add to the captured content if chat options allow it
 										if self.options.capture_content {
 											match self.captured_data.content {
-												Some(ref mut c) => c.push_str(&content),
-												None => self.captured_data.content = Some(content.clone()),
+												Some(ref mut c) => c.push_str(content),
+												None => self.captured_data.content = Some(content.to_string()),
 											}
 										}
-										InterStreamEvent::Chunk(content)
+										InterStreamEvent::Chunk(content.to_string())
 									} else {
 										continue;
 									}

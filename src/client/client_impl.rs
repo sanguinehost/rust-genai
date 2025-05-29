@@ -1,5 +1,8 @@
 use crate::adapter::{AdapterDispatcher, AdapterKind, ServiceType, WebRequestData};
-use crate::chat::{ChatOptions, ChatOptionsSet, ChatRequest, ChatResponse, ChatStreamResponse};
+use crate::chat::{
+	ChatOptions, ChatOptionsSet, ChatRequest, ChatResponse, ChatStreamResponse, ImagenGenerateImagesRequest,
+	ImagenGenerateImagesResponse,
+}; // Added Imagen types
 use crate::resolver::AuthData;
 use crate::{Client, Error, ModelIden, Result, ServiceTarget};
 
@@ -111,5 +114,34 @@ impl Client {
 		let res = AdapterDispatcher::to_chat_stream(model, reqwest_builder, options_set)?;
 
 		Ok(res)
+	}
+
+	/// Executes an Imagen 3 image generation request.
+	pub async fn exec_generate_images_imagen(
+		&self,
+		model: &str, // e.g., "imagen-3.0-generate-002"
+		request: ImagenGenerateImagesRequest,
+	) -> Result<ImagenGenerateImagesResponse> {
+		let model_iden = self.default_model(model)?; // This will set AdapterKind to Gemini if model starts with "imagen-"
+		let target = self.config().resolve_service_target(model_iden.clone()).await?;
+
+		let web_request_data = AdapterDispatcher::to_imagen_generation_request_data(target.clone(), request)?;
+
+		let web_res = self
+			.web_client()
+			.do_post(
+				&web_request_data.url,
+				&web_request_data.headers,
+				web_request_data.payload,
+			)
+			.await
+			.map_err(|webc_error| Error::WebModelCall {
+				model_iden: target.model.clone(),
+				webc_error,
+			})?;
+
+		let response = AdapterDispatcher::to_imagen_generation_response(target.model, web_res)?;
+
+		Ok(response)
 	}
 }

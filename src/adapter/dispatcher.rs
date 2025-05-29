@@ -5,9 +5,12 @@ use crate::adapter::gemini::GeminiAdapter;
 use crate::adapter::ollama::OllamaAdapter;
 use crate::adapter::openai::OpenAIAdapter;
 use crate::adapter::{Adapter, AdapterKind, ServiceType, WebRequestData};
-use crate::chat::{ChatOptionsSet, ChatRequest, ChatResponse, ChatStreamResponse};
+use crate::chat::{
+	ChatOptionsSet, ChatRequest, ChatResponse, ChatStreamResponse, ImagenGenerateImagesRequest,
+	ImagenGenerateImagesResponse,
+}; // Added Imagen types
 use crate::webc::WebResponse;
-use crate::{Result, ServiceTarget};
+use crate::{Error, Result, ServiceTarget}; // Added Error
 use reqwest::RequestBuilder;
 
 use super::groq::GroqAdapter;
@@ -63,12 +66,13 @@ impl AdapterDispatcher {
 	}
 
 	pub fn get_service_url(model: &ModelIden, service_type: ServiceType, endpoint: Endpoint) -> String {
+		// Dispatch based on AdapterKind first, as primary routing
 		match model.adapter_kind {
 			AdapterKind::OpenAI => OpenAIAdapter::get_service_url(model, service_type, endpoint),
 			AdapterKind::Anthropic => AnthropicAdapter::get_service_url(model, service_type, endpoint),
 			AdapterKind::Cohere => CohereAdapter::get_service_url(model, service_type, endpoint),
 			AdapterKind::Ollama => OllamaAdapter::get_service_url(model, service_type, endpoint),
-			AdapterKind::Gemini => GeminiAdapter::get_service_url(model, service_type, endpoint),
+			AdapterKind::Gemini => GeminiAdapter::get_service_url(model, service_type, endpoint), // GeminiAdapter will handle its own ServiceTypes
 			AdapterKind::Groq => GroqAdapter::get_service_url(model, service_type, endpoint),
 			AdapterKind::Xai => XaiAdapter::get_service_url(model, service_type, endpoint),
 			AdapterKind::DeepSeek => DeepSeekAdapter::get_service_url(model, service_type, endpoint),
@@ -127,6 +131,35 @@ impl AdapterDispatcher {
 			AdapterKind::Groq => GroqAdapter::to_chat_stream(model_iden, reqwest_builder, options_set),
 			AdapterKind::Xai => XaiAdapter::to_chat_stream(model_iden, reqwest_builder, options_set),
 			AdapterKind::DeepSeek => DeepSeekAdapter::to_chat_stream(model_iden, reqwest_builder, options_set),
+		}
+	}
+
+	// -- Imagen 3 specific --
+	pub fn to_imagen_generation_request_data(
+		target: ServiceTarget,
+		request: ImagenGenerateImagesRequest,
+	) -> Result<WebRequestData> {
+		let adapter_kind = target.model.adapter_kind;
+		match adapter_kind {
+			AdapterKind::Gemini => GeminiAdapter::to_imagen_generation_request_data(target, request),
+			_ => Err(Error::AdapterFeatureNotSupported {
+				adapter_kind,
+				feature: "Imagen 3 Image Generation (request data)".to_string(),
+			}),
+		}
+	}
+
+	pub fn to_imagen_generation_response(
+		model_iden: ModelIden,
+		web_response: WebResponse,
+	) -> Result<ImagenGenerateImagesResponse> {
+		let adapter_kind = model_iden.adapter_kind;
+		match adapter_kind {
+			AdapterKind::Gemini => GeminiAdapter::to_imagen_generation_response(model_iden, web_response),
+			_ => Err(Error::AdapterFeatureNotSupported {
+				adapter_kind,
+				feature: "Imagen 3 Image Generation (response data)".to_string(),
+			}),
 		}
 	}
 }

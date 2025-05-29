@@ -1,6 +1,6 @@
+use super::streamer::AnthropicStreamer;
 use crate::ModelIden;
 use crate::adapter::adapters::support::get_api_key;
-use crate::adapter::anthropic::AnthropicStreamer;
 use crate::adapter::{Adapter, AdapterKind, ServiceType, WebRequestData};
 use crate::chat::{
 	ChatOptionsSet, ChatRequest, ChatResponse, ChatRole, ChatStream, ChatStreamResponse, ContentPart, ImageSource,
@@ -66,6 +66,13 @@ impl Adapter for AnthropicAdapter {
 		let base_url = endpoint.base_url();
 		match service_type {
 			ServiceType::Chat | ServiceType::ChatStream => format!("{base_url}messages"),
+			ServiceType::ImageGenerationImagen => {
+				// For now, other service types are not supported by Anthropic
+				// This should ideally be caught earlier by the AdapterDispatcher
+				// or a more specific error should be returned.
+				// For now, we return a generic error.
+				panic!("ServiceType {service_type:?} not supported for AnthropicAdapter");
+			}
 		}
 	}
 

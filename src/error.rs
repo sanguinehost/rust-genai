@@ -70,6 +70,10 @@ pub enum Error {
 		webc_error: webc::Error,
 	},
 
+	/// Error when an adapter feature is not supported.
+	#[display("Adapter '{adapter_kind}' does not support feature '{feature}'")]
+	AdapterFeatureNotSupported { adapter_kind: AdapterKind, feature: String },
+
 	// -- Chat Stream
 	#[display("Failed to parse stream data for model '{model_iden}'.\nCause: {serde_error}")]
 	StreamParse {

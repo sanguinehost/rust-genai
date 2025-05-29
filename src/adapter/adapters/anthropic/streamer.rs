@@ -19,7 +19,7 @@ pub struct AnthropicStreamer {
 }
 
 impl AnthropicStreamer {
-	pub fn new(inner: EventSource, model_iden: ModelIden, options_set: &ChatOptionsSet<'_, '_>) -> Self {
+	pub fn new(inner: EventSource, model_iden: ModelIden, options_set: &ChatOptionsSet) -> Self {
 		Self {
 			inner,
 			done: false,
@@ -64,7 +64,7 @@ impl futures::Stream for AnthropicStreamer {
 							if self.options.capture_content {
 								match self.captured_data.content {
 									Some(ref mut c) => c.push_str(&content),
-									None => self.captured_data.content = Some(content.clone()),
+									None => self.captured_data.content = Some(content.to_string()),
 								}
 							}
 
