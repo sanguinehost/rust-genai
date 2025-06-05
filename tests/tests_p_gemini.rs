@@ -1,6 +1,5 @@
 mod support;
 mod tests_p_gemini_document; // Added for document understanding tests
-
 use crate::support::{Check, common_tests};
 use genai::adapter::AdapterKind;
 use genai::chat::{ChatMessage, ChatOptions, ChatRequest, Tool};
@@ -409,9 +408,7 @@ async fn test_chat_json_schema_structured_ok() -> Result<()> {
 	use genai::chat::{ChatResponseFormat, JsonSchemaSpec};
 
 	let client = support::common_client_gemini();
-	let messages = vec![ChatMessage::user(
-		"Please give a random example following this schema: UserProfile = { username: string, age: optional<int>, roles: array<UserRole>, contact: (Address | string) } UserRole = enum('admin', 'viewer') Address = { street: string, city: string }",
-	)];
+	let messages = vec![ChatMessage::user("Generate a user profile.")];
 
 	let json_schema = json!({
 		"title": "UserProfile",

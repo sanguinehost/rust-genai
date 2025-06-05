@@ -197,11 +197,23 @@ impl Adapter for GeminiAdapter {
 					payload.x_insert("/generationConfig/responseSchema", enum_spec.schema.clone())?;
 				}
 				ChatResponseFormat::JsonSchemaSpec(json_schema_spec) => {
-					// Note: Gemini 2.5+ models support response_json_schema
-					// This requires a different endpoint version (v1alpha)
-					// For now, we'll assume the model supports it and the endpoint is handled elsewhere if needed.
+					let model_name_str = &model.model_name;
+					// Models known/expected to support response_json_schema with v1alpha
+					let supports_v1alpha_json_schema =
+						matches!(model_name_str.as_ref(), "gemini-2.5-flash-preview-05-20" | "gemini-2.5-pro-preview-05-06");
+
 					payload.x_insert("/generationConfig/responseMimeType", "application/json")?;
-					payload.x_insert("/generationConfig/responseSchema", json_schema_spec.schema.clone())?;
+					if supports_v1alpha_json_schema {
+						payload.x_insert("/generationConfig/response_json_schema", json_schema_spec.schema.clone())?;
+						// URL modification to v1alpha will be handled later
+					} else {
+						tracing::warn!(
+							"GeminiAdapter: ChatResponseFormat::JsonSchemaSpec used with model '{}' which may not support it via v1alpha endpoint or with 'response_json_schema'. \
+							Falling back to 'responseSchema' (OpenAPI subset) on the default (v1beta) endpoint. This may not work as expected or be ignored by the model.",
+							model_name_str
+						);
+						payload.x_insert("/generationConfig/responseSchema", json_schema_spec.schema.clone())?;
+					}
 				}
 				ChatResponseFormat::JsonMode => {
 					// Gemini does not have a direct "json_mode" like OpenAI.
@@ -291,10 +303,30 @@ impl Adapter for GeminiAdapter {
 		//       This should be considered an antipattern from a security point of view
 		//       even if it is done by the well respected Google. Everybody can make mistake once in a while.
 		// e.g., '...models/gemini-1.5-flash-latest:generateContent?key=YOUR_API_KEY'
-		let url = Self::get_service_url(&model, service_type, endpoint);
-		let url = format!("{url}?key={api_key}");
+		let mut final_url = Self::get_service_url(&model, service_type, endpoint);
 
-		Ok(WebRequestData { url, headers, payload })
+		// Potentially modify URL for v1alpha if JsonSchemaSpec is used with a compatible model
+		if let Some(ChatResponseFormat::JsonSchemaSpec(_)) = options_set.response_format() {
+			let model_name_str = &model.model_name;
+			if matches!(model_name_str.as_ref(), "gemini-2.5-flash-preview-05-20" | "gemini-2.5-pro-preview-05-06") {
+				// Only replace if the URL is indeed a v1beta URL from the default endpoint.
+				if final_url.starts_with("https://generativelanguage.googleapis.com/v1beta/") {
+					final_url = final_url.replacen(
+						"https://generativelanguage.googleapis.com/v1beta/",
+						"https://generativelanguage.googleapis.com/v1alpha/",
+						1,
+					);
+				}
+			}
+		}
+
+		let final_url_with_key = format!("{final_url}?key={api_key}");
+
+		Ok(WebRequestData {
+			url: final_url_with_key,
+			headers,
+			payload,
+		})
 	}
 
 	fn to_chat_response(
