@@ -38,6 +38,7 @@ const MODELS: &[&str] = &[
 	"gemini-2.0-flash-lite",
 	"gemini-2.5-flash-preview-05-20",
 	"gemini-2.5-pro-preview-05-06",
+	"gemini-2.5-pro-preview-06-05",
 	"gemini-1.5-pro",
 	"gemini-2.0-flash-preview-image-generation",
 	"imagen-3.0-generate-002",
@@ -200,7 +201,7 @@ impl Adapter for GeminiAdapter {
 					let model_name_str = &model.model_name;
 					// Models known/expected to support response_json_schema with v1alpha
 					let supports_v1alpha_json_schema =
-						matches!(model_name_str.as_ref(), "gemini-2.5-flash-preview-05-20" | "gemini-2.5-pro-preview-05-06");
+						matches!(model_name_str.as_ref(), "gemini-2.5-flash-preview-05-20" | "gemini-2.5-pro-preview-05-06" | "gemini-2.5-pro-preview-06-05");
 
 					payload.x_insert("/generationConfig/responseMimeType", "application/json")?;
 					if supports_v1alpha_json_schema {
@@ -308,7 +309,7 @@ impl Adapter for GeminiAdapter {
 		// Potentially modify URL for v1alpha if JsonSchemaSpec is used with a compatible model
 		if let Some(ChatResponseFormat::JsonSchemaSpec(_)) = options_set.response_format() {
 			let model_name_str = &model.model_name;
-			if matches!(model_name_str.as_ref(), "gemini-2.5-flash-preview-05-20" | "gemini-2.5-pro-preview-05-06") {
+			if matches!(model_name_str.as_ref(), "gemini-2.5-flash-preview-05-20" | "gemini-2.5-pro-preview-05-06" | "gemini-2.5-pro-preview-06-05") {
 				// Only replace if the URL is indeed a v1beta URL from the default endpoint.
 				if final_url.starts_with("https://generativelanguage.googleapis.com/v1beta/") {
 					final_url = final_url.replacen(
@@ -417,7 +418,17 @@ impl GeminiAdapter {
 					// If not, the logic to combine with other parts would be more complex.
 					content_parts.clear(); // Clear any previously parsed text/image parts for this candidate
 					break; // Move to the next candidate
-				} else if let Ok(text) = part_json.x_take::<String>("text") {
+				} else if let Ok(text_value) = part_json.x_take::<Value>("text") {
+					// Attempt to convert the Value to a String. This handles cases where the 'text' field
+					// might be a number, boolean, or null, which should not happen for valid text content,
+					// but provides robustness. More importantly, it ensures the full string is captured.
+					let text = text_value.as_str().map_or_else(
+						|| {
+							tracing::warn!("GeminiAdapter: 'text' part was not a string, converting to debug string. Value: {:?}", text_value);
+							text_value.to_string() // Fallback to debug string representation
+						},
+						|s| s.to_string(),
+					);
 					content_parts.push(ContentPart::Text(text));
 				} else if let Ok(mut inline_data_json) = part_json.x_take::<Value>("inlineData") {
 					let mime_type = inline_data_json.x_take::<String>("mimeType")?;

@@ -1,5 +1,10 @@
 `.` minor | `-` Fix | `+` Addition | `^` improvement | `!` Change | `*` Refactor
 
+2025-06-05 - v0.3.7
+
+- `+` gemini - add proper JsonSchema support for the 2.5+ model series
+- `+` gemini - add support for the `gemini-2.5-pro-preview-06-05` model
+
 ## 2025-05-30 - [v0.3.6](https://github.com/sanguinehost/rust-genai/compare/v0.3.5...v0.3.6)
 
 + `+` Chat - Add document understanding and generalize media handling
