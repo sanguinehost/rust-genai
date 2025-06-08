@@ -126,6 +126,15 @@ impl futures::Stream for GeminiStreamer {
 									);
 									continue; // Go to next item from WebStream, effectively skipping this block for event emission
 								}
+								Some(super::GeminiChatContent::Thought(thought_text)) => {
+									if self.options.capture_reasoning_content {
+										match self.captured_data.reasoning_content {
+											Some(ref mut c) => c.push_str(&thought_text),
+											None => self.captured_data.reasoning_content = Some(thought_text.clone()),
+										}
+									}
+									InterStreamEvent::ReasoningChunk(thought_text)
+								}
 								None => {
 									// No content from the first candidate, usage already updated. Skip emitting an empty chunk.
 									continue; // Go to next item from WebStream

@@ -154,6 +154,10 @@ impl Adapter for GeminiAdapter {
 			payload.x_insert("/generationConfig/thinkingConfig/thinkingBudget", budget)?;
 		}
 
+		if options_set.include_thoughts().is_some_and(|v| v) {
+			payload.x_insert("/generationConfig/thinkingConfig/includeThoughts", true)?;
+		}
+
 		// -- headers (empty for gemini, since API_KEY is in url)
 		let headers = vec![];
 
@@ -344,10 +348,21 @@ impl Adapter for GeminiAdapter {
 		let gemini_response = Self::body_to_gemini_chat_response(&model_iden, body, &options_set)?;
 		let GeminiChatResponse { contents, usage } = gemini_response;
 
-		// Map Vec<GeminiChatContent> to Vec<MessageContent>
-		// Each GeminiChatContent now directly corresponds to a MessageContent
-		// (as GeminiChatContent can hold multiple parts or a tool call)
-		let response_contents: Vec<MessageContent> = contents.into_iter().map(Into::into).collect();
+		let mut response_contents: Vec<MessageContent> = Vec::new();
+		let mut reasoning_parts: Vec<String> = Vec::new();
+
+		for content in contents {
+			match content {
+				GeminiChatContent::Thought(thought) => reasoning_parts.push(thought),
+				other => response_contents.push(other.into()),
+			}
+		}
+
+		let reasoning_content = if reasoning_parts.is_empty() {
+			None
+		} else {
+			Some(reasoning_parts.join("\n"))
+		};
 
 		// If the original request was for a single candidate (or default),
 		// and we got no content, the response_contents vec will be empty.
@@ -355,7 +370,7 @@ impl Adapter for GeminiAdapter {
 
 		Ok(ChatResponse {
 			contents: response_contents,
-			reasoning_content: None,
+			reasoning_content,
 			model_iden,
 			provider_model_iden,
 			usage,
@@ -407,6 +422,9 @@ impl GeminiAdapter {
 			let mut has_image_content = false;
 
 			for mut part_json in candidate_content_parts_json {
+				// -- Check for thought
+				let is_thought = part_json.x_get::<bool>("thought").ok().is_some_and(|v| v);
+
 				if let Ok(fc_json) = part_json.x_take::<Value>("functionCall") {
 					// This part is a function call
 					gemini_contents.push(GeminiChatContent::ToolCall(ToolCall {
@@ -429,7 +447,11 @@ impl GeminiAdapter {
 						},
 						|s| s.to_string(),
 					);
-					content_parts.push(ContentPart::Text(text));
+					if is_thought {
+						gemini_contents.push(GeminiChatContent::Thought(text));
+					} else {
+						content_parts.push(ContentPart::Text(text));
+					}
 				} else if let Ok(mut inline_data_json) = part_json.x_take::<Value>("inlineData") {
 					let mime_type = inline_data_json.x_take::<String>("mimeType")?;
 					let data = inline_data_json.x_take::<String>("data")?;
@@ -1049,6 +1071,7 @@ pub(super) struct GeminiChatResponse {
 pub(super) enum GeminiChatContent {
 	Parts(Vec<ContentPart>),
 	ToolCall(ToolCall),
+	Thought(String),
 	// Note: A simple Text variant might be redundant if Parts can contain a single Text part.
 	// However, keeping it might simplify some direct text-only response scenarios if they exist.
 	// For now, focusing on Parts for flexibility with multi-modal and ToolCall.
@@ -1069,6 +1092,9 @@ impl From<GeminiChatContent> for MessageContent {
 				}
 			}
 			GeminiChatContent::ToolCall(tool_call) => Self::ToolCalls(vec![tool_call]),
+			GeminiChatContent::Thought(_) => {
+				unreachable!("GeminiChatContent::Thought should not be converted to MessageContent directly")
+			}
 		}
 	}
 }

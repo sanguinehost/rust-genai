@@ -75,6 +75,10 @@ pub struct ChatOptions {
 	/// Corresponds to `generationConfig.responseModalities` in Gemini.
 	/// E.g., `vec!["TEXT".to_string(), "IMAGE".to_string()]`
 	pub response_modalities: Option<Vec<String>>,
+
+	// -- Gemini Specific --
+	/// (Gemini specific) If true, will include the thoughts in the response.
+	pub include_thoughts: Option<bool>,
 }
 
 /// Chainable Setters
@@ -198,6 +202,12 @@ impl ChatOptions {
 	#[must_use]
 	pub fn with_response_modalities(mut self, values: Vec<String>) -> Self {
 		self.response_modalities = Some(values);
+		self
+	}
+
+	#[must_use]
+	pub const fn with_include_thoughts(mut self, value: bool) -> Self {
+		self.include_thoughts = Some(value);
 		self
 	}
 
@@ -480,6 +490,13 @@ impl ChatOptionsSet<'_, '_> {
 		self.chat
 			.and_then(|chat| chat.response_modalities.as_ref())
 			.or_else(|| self.client.and_then(|client| client.response_modalities.as_ref()))
+	}
+
+	#[must_use]
+	pub fn include_thoughts(&self) -> Option<bool> {
+		self.chat
+			.and_then(|chat| chat.include_thoughts)
+			.or_else(|| self.client.and_then(|client| client.include_thoughts))
 	}
 }
 
