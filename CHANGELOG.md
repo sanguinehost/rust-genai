@@ -1,7 +1,7 @@
 `.` minor | `-` Fix | `+` Addition | `^` improvement | `!` Change | `*` Refactor
 
 2025-06-05 - v0.3.7
-
+- `+` gemini - update support for reasoning content and thinking budgets
 - `+` gemini - add proper JsonSchema support for the 2.5+ model series
 - `+` gemini - add support for the `gemini-2.5-pro-preview-06-05` model
 
