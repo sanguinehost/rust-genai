@@ -303,6 +303,13 @@ impl Adapter for GeminiAdapter {
 			}
 		}
 
+		// -- Safety Settings
+		if let Some(safety_settings) = options_set.safety_settings() {
+			if !safety_settings.is_empty() {
+				payload.x_insert("safetySettings", safety_settings)?;
+			}
+		}
+
 		// -- url
 		// NOTE: Somehow, Google decided to put the API key in the URL.
 		//       This should be considered an antipattern from a security point of view

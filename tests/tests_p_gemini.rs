@@ -499,4 +499,24 @@ async fn test_chat_json_schema_structured_ok() -> Result<()> {
 	Ok(())
 }
 
+#[tokio::test]
+async fn test_chat_safety_settings_ok() -> Result<()> {
+	use genai::chat::{HarmCategory, HarmBlockThreshold, SafetySetting};
+	
+	let client = support::common_client_gemini();
+	let safety_settings = vec![
+		SafetySetting::new(HarmCategory::Harassment, HarmBlockThreshold::BlockMediumAndAbove),
+		SafetySetting::new(HarmCategory::HateSpeech, HarmBlockThreshold::BlockOnlyHigh),
+	];
+	let chat_options = ChatOptions::default().with_safety_settings(safety_settings);
+	let messages = vec![ChatMessage::user("Write a polite hello message.")];
+	let chat_req = ChatRequest::new(messages);
+
+	let res = client.exec_chat(MODEL, chat_req, Some(&chat_options)).await?;
+	assert!(!res.contents.is_empty(), "Expected content in response");
+	println!("test_chat_safety_settings_ok - Response Contents: {:?}", res.contents);
+
+	Ok(())
+}
+
 // endregion: --- New Advanced Options Tests

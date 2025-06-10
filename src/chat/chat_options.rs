@@ -9,6 +9,51 @@ use crate::chat::chat_req_response_format::ChatResponseFormat;
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 
+// region:    --- Safety Settings
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum HarmCategory {
+	#[serde(rename = "HARM_CATEGORY_HARASSMENT")]
+	Harassment,
+	#[serde(rename = "HARM_CATEGORY_HATE_SPEECH")]
+	HateSpeech,
+	#[serde(rename = "HARM_CATEGORY_SEXUALLY_EXPLICIT")]
+	SexuallyExplicit,
+	#[serde(rename = "HARM_CATEGORY_DANGEROUS_CONTENT")]
+	DangerousContent,
+	#[serde(rename = "HARM_CATEGORY_CIVIC_INTEGRITY")]
+	CivicIntegrity,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum HarmBlockThreshold {
+	#[serde(rename = "BLOCK_NONE")]
+	BlockNone,
+	#[serde(rename = "BLOCK_ONLY_HIGH")]
+	BlockOnlyHigh,
+	#[serde(rename = "BLOCK_MEDIUM_AND_ABOVE")]
+	BlockMediumAndAbove,
+	#[serde(rename = "BLOCK_LOW_AND_ABOVE")]
+	BlockLowAndAbove,
+	#[serde(rename = "HARM_BLOCK_THRESHOLD_UNSPECIFIED")]
+	Unspecified,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SafetySetting {
+	pub category: HarmCategory,
+	pub threshold: HarmBlockThreshold,
+}
+
+impl SafetySetting {
+	#[must_use]
+	pub const fn new(category: HarmCategory, threshold: HarmBlockThreshold) -> Self {
+		Self { category, threshold }
+	}
+}
+
+// endregion: --- Safety Settings
+
 /// Chat Options that are considered for any `Client::exec...` calls.
 ///
 /// A fallback `ChatOptions` can also be set at the `Client` during the client builder phase.
@@ -75,6 +120,10 @@ pub struct ChatOptions {
 	/// Corresponds to `generationConfig.responseModalities` in Gemini.
 	/// E.g., `vec!["TEXT".to_string(), "IMAGE".to_string()]`
 	pub response_modalities: Option<Vec<String>>,
+
+	/// Corresponds to `safetySettings` in Gemini.
+	/// Configures safety filtering for harmful content.
+	pub safety_settings: Option<Vec<SafetySetting>>,
 
 	// -- Gemini Specific --
 	/// (Gemini specific) If true, will include the thoughts in the response.
@@ -202,6 +251,12 @@ impl ChatOptions {
 	#[must_use]
 	pub fn with_response_modalities(mut self, values: Vec<String>) -> Self {
 		self.response_modalities = Some(values);
+		self
+	}
+
+	#[must_use]
+	pub fn with_safety_settings(mut self, settings: Vec<SafetySetting>) -> Self {
+		self.safety_settings = Some(settings);
 		self
 	}
 
@@ -490,6 +545,13 @@ impl ChatOptionsSet<'_, '_> {
 		self.chat
 			.and_then(|chat| chat.response_modalities.as_ref())
 			.or_else(|| self.client.and_then(|client| client.response_modalities.as_ref()))
+	}
+
+	#[must_use]
+	pub fn safety_settings(&self) -> Option<&Vec<SafetySetting>> {
+		self.chat
+			.and_then(|chat| chat.safety_settings.as_ref())
+			.or_else(|| self.client.and_then(|client| client.safety_settings.as_ref()))
 	}
 
 	#[must_use]
