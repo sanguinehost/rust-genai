@@ -1,5 +1,13 @@
 `.` minor | `-` Fix | `+` Addition | `^` improvement | `!` Change | `*` Refactor
 
+2025-06-18 - v0.3.9
+
+- `+` gemini - add support for `gemini-2.5-flash-lite-preview-06-17`
+
+2025-06-10 - v0.3.8
+
+- `+` gemini - add support for safety settings
+
 2025-06-05 - v0.3.7
 - `+` gemini - update support for reasoning content and thinking budgets
 - `+` gemini - add proper JsonSchema support for the 2.5+ model series

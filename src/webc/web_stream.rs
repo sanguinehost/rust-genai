@@ -134,7 +134,22 @@ impl Stream for WebStream {
 					Poll::Ready(None) => {
 						if let Some(partial) = this.partial_message.take() {
 							if !partial.is_empty() {
-								return Poll::Ready(Some(Ok(partial)));
+								// Only emit partial if it's not for JSON mode or if it's valid JSON
+								match this.stream_mode {
+									StreamMode::PrettyJsonArray => {
+										// For JSON mode, validate before emitting
+										if partial.trim() == "]" || serde_json::from_str::<serde_json::Value>(&partial).is_ok() {
+											tracing::debug!("WebStream: Emitting final partial: {}", partial.chars().take(50).collect::<String>());
+											return Poll::Ready(Some(Ok(partial)));
+										} else {
+											tracing::warn!("WebStream: Discarding invalid partial JSON at stream end: {}", partial.chars().take(50).collect::<String>());
+										}
+									}
+									StreamMode::Delimiter(_) => {
+										// For delimiter mode, emit as-is
+										return Poll::Ready(Some(Ok(partial)));
+									}
+								}
 							}
 						}
 						this.bytes_stream = None;
@@ -167,37 +182,79 @@ struct BuffResponse {
 /// - Main JSON object `,` delimiter will be skipped
 /// - The ending `]` will be sent as a `]` message as well.
 ///
-/// IMPORTANT: Right now, it assumes each `buff_string` will contain the full main JSON object
-///            for each array item (which seems to be the case with Gemini).
-///            This probably needs to be made more robust later.
-fn new_with_pretty_json_array(buff_string: &str, _partial_message: &mut Option<String>) -> BuffResponse {
-	let buff_str = buff_string.trim();
-
+/// IMPORTANT: Properly handles partial JSON objects that are split across network packets
+///            by maintaining state in the partial_message parameter and only emitting complete objects.
+fn new_with_pretty_json_array(buff_string: &str, partial_message: &mut Option<String>) -> BuffResponse {
+	// Combine with any existing partial message
+	let combined_str = if let Some(existing_partial) = partial_message.take() {
+		tracing::debug!("WebStream: Combining partial message ({}chars) with new data ({}chars)", existing_partial.len(), buff_string.len());
+		format!("{}{}", existing_partial, buff_string)
+	} else {
+		buff_string.to_string()
+	};
+	
+	let buff_str = combined_str.trim();
 	let mut messages: Vec<String> = Vec::new();
 
-	// -- Capture the array start/end and each eventual sub-object (assuming only one sub-object)
+	// -- Handle array start
 	let (array_start, rest_str) = buff_str
 		.strip_prefix('[')
 		.map_or((None, buff_str), |rest| (Some("["), rest.trim()));
 
-	// Remove the eventual ',' prefix and suffix.
-	let rest_str = rest_str.strip_prefix(',').unwrap_or(rest_str);
-	let rest_str = rest_str.strip_suffix(',').unwrap_or(rest_str);
-
-	let (rest_str, array_end) = rest_str
-		.strip_suffix(']')
-		.map_or((rest_str, None), |rest| (rest.trim(), Some("]")));
-
-	// -- Prep the BuffResponse
 	if let Some(array_start) = array_start {
 		messages.push(array_start.to_string());
 	}
-	if !rest_str.is_empty() {
-		messages.push(rest_str.to_string());
+
+	// -- Try to extract complete JSON objects from the remaining content
+	let mut remaining_content = rest_str;
+	
+	// Remove any leading comma
+	remaining_content = remaining_content.trim_start_matches(',').trim();
+	
+	// Check for array end first
+	if remaining_content.starts_with(']') {
+		messages.push("]".to_string());
+		remaining_content = &remaining_content[1..];
 	}
-	// We ignore the comma
-	if let Some(array_end) = array_end {
-		messages.push(array_end.to_string());
+	
+	// Try to extract JSON objects
+	while !remaining_content.is_empty() && remaining_content.starts_with('{') {
+		// Find the end of the JSON object by trying to parse incrementally
+		let mut found_complete_object = false;
+		
+		// Look for potential end positions by finding closing braces
+		for (i, _) in remaining_content.match_indices('}') {
+			let candidate = &remaining_content[..=i];
+			
+			// Try to parse this candidate as valid JSON
+			if let Ok(_) = serde_json::from_str::<serde_json::Value>(candidate) {
+				// Found a complete JSON object
+				tracing::debug!("WebStream: Found complete JSON object ({}chars)", candidate.len());
+				messages.push(candidate.to_string());
+				remaining_content = remaining_content[i+1..].trim();
+				
+				// Skip any comma after the object
+				remaining_content = remaining_content.strip_prefix(',').unwrap_or(remaining_content).trim();
+				
+				// Check for array end
+				if remaining_content.starts_with(']') {
+					messages.push("]".to_string());
+					remaining_content = &remaining_content[1..];
+				}
+				
+				found_complete_object = true;
+				break;
+			}
+		}
+		
+		if !found_complete_object {
+			// No complete JSON object found - store remainder as partial
+			if !remaining_content.is_empty() {
+				tracing::debug!("WebStream: Storing incomplete JSON as partial ({}chars)", remaining_content.len());
+				*partial_message = Some(remaining_content.to_string());
+			}
+			break;
+		}
 	}
 
 	// -- Return the buff response
