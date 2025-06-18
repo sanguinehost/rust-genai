@@ -520,3 +520,221 @@ async fn test_chat_safety_settings_ok() -> Result<()> {
 }
 
 // endregion: --- New Advanced Options Tests
+
+// region:    --- Streaming Tool Call Tests
+
+#[tokio::test]
+async fn test_chat_stream_tool_call_ok() -> Result<()> {
+	let client = support::common_client_gemini();
+	let weather_tool = Tool::new("get_weather".to_string())
+		.with_description("Get the current weather for a location".to_string())
+		.with_schema(json!({
+			"type": "object",
+			"properties": {
+				"city": {
+					"type": "string",
+					"description": "The city name"
+				},
+				"country": {
+					"type": "string",
+					"description": "The country of the city"
+				},
+				"unit": {
+					"type": "string",
+					"enum": ["C", "F"],
+					"description": "Temperature unit (C for Celsius, F for Fahrenheit)"
+				}
+			},
+			"required": ["city", "country", "unit"]
+		}));
+
+	let messages = vec![ChatMessage::user("Get the weather for Tokyo, Japan in Celsius using the get_weather function.")];
+	let chat_req = ChatRequest::new(messages).with_tools(vec![weather_tool]);
+	
+	// Force function calling with ANY mode
+	let chat_options = ChatOptions::default().with_function_calling_mode("ANY".to_string());
+
+	let response = client.exec_chat_stream(MODEL, chat_req, Some(&chat_options)).await?;
+	let mut stream = response.stream;
+
+	let mut tool_call_received = false;
+	let mut start_received = false;
+	let mut end_received = false;
+
+	use futures::StreamExt;
+	while let Some(stream_result) = stream.next().await {
+		match stream_result? {
+			genai::chat::ChatStreamEvent::Start => {
+				start_received = true;
+				println!("✓ Stream started");
+			}
+			genai::chat::ChatStreamEvent::ToolCall(tool_call) => {
+				tool_call_received = true;
+				println!("✓ Tool call received: {} with args: {:?}", tool_call.fn_name, tool_call.fn_arguments);
+				assert_eq!(tool_call.fn_name, "get_weather");
+				assert!(!tool_call.call_id.is_empty());
+				assert!(tool_call.fn_arguments.is_object());
+			}
+			genai::chat::ChatStreamEvent::Chunk(chunk) => {
+				println!("Content chunk: {}", chunk.content);
+			}
+			genai::chat::ChatStreamEvent::ReasoningChunk(reasoning) => {
+				println!("Reasoning chunk: {}", reasoning.content);
+			}
+			genai::chat::ChatStreamEvent::End(_end_event) => {
+				end_received = true;
+				println!("✓ Stream ended");
+				break;
+			}
+		}
+	}
+
+	assert!(start_received, "Expected stream start event");
+	assert!(tool_call_received, "Expected tool call event in stream");
+	assert!(end_received, "Expected stream end event");
+
+	Ok(())
+}
+
+#[tokio::test]
+async fn test_chat_stream_tool_full_flow_ok() -> Result<()> {
+	use genai::chat::ToolResponse;
+
+	let client = support::common_client_gemini();
+	let calculator_tool = Tool::new("calculate".to_string())
+		.with_description("Perform basic arithmetic calculations".to_string())
+		.with_schema(json!({
+			"type": "object",
+			"properties": {
+				"operation": {
+					"type": "string",
+					"enum": ["add", "subtract", "multiply", "divide"],
+					"description": "The arithmetic operation to perform"
+				},
+				"a": {
+					"type": "number",
+					"description": "First number"
+				},
+				"b": {
+					"type": "number",
+					"description": "Second number"
+				}
+			},
+			"required": ["operation", "a", "b"]
+		}));
+
+	// Step 1: Initial request with tool
+	let mut messages = vec![ChatMessage::user("What is 23 + 19?")];
+	let mut chat_req = ChatRequest::new(messages.clone()).with_tools(vec![calculator_tool]);
+
+	// Step 2: Get tool call from streaming response  
+	let chat_options = ChatOptions::default().with_function_calling_mode("ANY".to_string());
+	let response = client.exec_chat_stream(MODEL, chat_req.clone(), Some(&chat_options)).await?;
+	let mut stream = response.stream;
+
+	let mut tool_call_opt = None;
+	use futures::StreamExt;
+	while let Some(stream_result) = stream.next().await {
+		match stream_result? {
+			genai::chat::ChatStreamEvent::ToolCall(tool_call) => {
+				println!("✓ Tool call in stream: {} with args: {:?}", tool_call.fn_name, tool_call.fn_arguments);
+				tool_call_opt = Some(tool_call);
+			}
+			genai::chat::ChatStreamEvent::End(_) => break,
+			_ => {} // Ignore other events for this test
+		}
+	}
+
+	let tool_call = tool_call_opt.expect("Expected tool call in stream");
+	assert_eq!(tool_call.fn_name, "calculate");
+
+	// Step 3: Simulate tool execution
+	let a = tool_call.fn_arguments.get("a").and_then(|v| v.as_f64()).unwrap_or(0.0);
+	let b = tool_call.fn_arguments.get("b").and_then(|v| v.as_f64()).unwrap_or(0.0);
+	let operation = tool_call.fn_arguments.get("operation").and_then(|v| v.as_str()).unwrap_or("");
+
+	let result = match operation {
+		"add" => a + b,
+		"subtract" => a - b,
+		"multiply" => a * b,
+		"divide" => if b != 0.0 { a / b } else { f64::NAN },
+		_ => f64::NAN,
+	};
+
+	let tool_response = ToolResponse::new(
+		tool_call.call_id.clone(),
+		json!({
+			"result": result,
+			"operation": format!("{} {} {} = {}", a, operation, b, result)
+		}).to_string(),
+	);
+
+	// Step 4: Continue conversation with tool response
+	messages.push(ChatMessage::from(vec![tool_call]));
+	messages.push(ChatMessage::from(tool_response));
+	chat_req = ChatRequest::new(messages);
+
+	// Step 5: Get final response as stream
+	let response = client.exec_chat_stream(MODEL, chat_req, None).await?;
+	let mut stream = response.stream;
+
+	let mut final_content = String::new();
+	while let Some(stream_result) = stream.next().await {
+		match stream_result? {
+			genai::chat::ChatStreamEvent::Chunk(chunk) => {
+				final_content.push_str(&chunk.content);
+			}
+			genai::chat::ChatStreamEvent::End(_) => break,
+			_ => {} // Ignore other events
+		}
+	}
+
+	assert!(!final_content.is_empty(), "Expected final response content");
+	assert!(final_content.contains("42") || final_content.contains("23") || final_content.contains("19"), 
+		"Expected response to contain calculation result or input numbers");
+	println!("✓ Full tool flow completed. Final response: {}", final_content);
+
+	Ok(())
+}
+
+#[tokio::test]
+async fn test_chat_stream_parallel_tool_calls_ok() -> Result<()> {
+	let client = support::common_client_gemini();
+	let weather_tool = helper_dummy_tool_weather();
+	let recipe_tool = helper_dummy_tool_recipe();
+
+	let messages = vec![ChatMessage::user("What's the weather in London and find me a recipe for pasta?")];
+	let chat_req = ChatRequest::new(messages).with_tools(vec![weather_tool, recipe_tool]);
+	
+	let chat_options = ChatOptions::default().with_function_calling_mode("ANY".to_string());
+	let response = client.exec_chat_stream(MODEL, chat_req, Some(&chat_options)).await?;
+	let mut stream = response.stream;
+
+	let mut tool_calls = Vec::new();
+	use futures::StreamExt;
+	while let Some(stream_result) = stream.next().await {
+		match stream_result? {
+			genai::chat::ChatStreamEvent::ToolCall(tool_call) => {
+				println!("✓ Tool call received: {} with args: {:?}", tool_call.fn_name, tool_call.fn_arguments);
+				tool_calls.push(tool_call);
+			}
+			genai::chat::ChatStreamEvent::End(_) => break,
+			_ => {} // Ignore other events for this test
+		}
+	}
+
+	// We expect at least one tool call, potentially parallel calls
+	assert!(!tool_calls.is_empty(), "Expected at least one tool call");
+	
+	// Verify we got expected tool names
+	let tool_names: Vec<&str> = tool_calls.iter().map(|tc| tc.fn_name.as_str()).collect();
+	println!("Tool calls received: {:?}", tool_names);
+	
+	// Should have weather or recipe calls (or both for parallel calling)
+	assert!(tool_names.iter().any(|&name| name == "get_current_weather" || name == "find_recipe"),
+		"Expected weather or recipe tool calls");
+
+	Ok(())
+}
+
+// endregion: --- Streaming Tool Call Tests

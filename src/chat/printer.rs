@@ -92,6 +92,14 @@ async fn print_chat_stream_inner(
 					}
 				}
 
+				ChatStreamEvent::ToolCall(tool_call) => {
+					if print_events {
+						(Some(format!("\n-- ChatStreamEvent::ToolCall: {} with args: {:?}\n", tool_call.fn_name, tool_call.fn_arguments)), None)
+					} else {
+						(None, None)
+					}
+				}
+
 				ChatStreamEvent::End(end_event) => {
 					if print_events {
 						// TODO: Might implement pretty JSON formatting

@@ -120,11 +120,8 @@ impl futures::Stream for GeminiStreamer {
 									InterStreamEvent::Chunk(text_content)
 								}
 								Some(super::GeminiChatContent::ToolCall(tool_call)) => {
-									tracing::warn!(
-										"GeminiStreamer received a ToolCall in a stream chunk: {:?}. This will not be emitted as InterStreamEvent::Chunk.",
-										tool_call
-									);
-									continue; // Go to next item from WebStream, effectively skipping this block for event emission
+									// Emit tool call as a stream event instead of skipping it
+									InterStreamEvent::ToolCall(tool_call)
 								}
 								Some(super::GeminiChatContent::Thought(thought_text)) => {
 									if self.options.capture_reasoning_content {

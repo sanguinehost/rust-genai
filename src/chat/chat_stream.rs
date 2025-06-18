@@ -1,5 +1,5 @@
 use crate::adapter::inter_stream::{InterStreamEnd, InterStreamEvent};
-use crate::chat::{MessageContent, Usage};
+use crate::chat::{MessageContent, ToolCall, Usage};
 use futures::Stream;
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
@@ -42,6 +42,7 @@ impl Stream for ChatStream {
 					InterStreamEvent::ReasoningChunk(content) => {
 						ChatStreamEvent::ReasoningChunk(StreamChunk { content })
 					}
+					InterStreamEvent::ToolCall(tool_call) => ChatStreamEvent::ToolCall(tool_call),
 					InterStreamEvent::End(inter_end) => ChatStreamEvent::End(inter_end.into()),
 				};
 				Poll::Ready(Some(Ok(chat_event)))
@@ -68,6 +69,9 @@ pub enum ChatStreamEvent {
 
 	/// Represents the `reasoning_content` chunk.
 	ReasoningChunk(StreamChunk),
+
+	/// Represents a tool call request from the model.
+	ToolCall(ToolCall),
 
 	/// Represents the end of the stream.
 	/// It will have the `.captured_usage` and `.captured_content` if specified in the `ChatOptions`.
