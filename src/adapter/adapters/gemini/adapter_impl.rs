@@ -34,13 +34,12 @@ use value_ext::JsonValueExt;
 pub struct GeminiAdapter;
 
 const MODELS: &[&str] = &[
-	"gemini-2.0-flash",
-	"gemini-2.0-flash-lite",
-	"gemini-2.5-flash-preview-05-20",
+	// Latest GA models
+	"gemini-2.5-pro",
+	"gemini-2.5-flash",
 	"gemini-2.5-flash-lite-preview-06-17",
-	"gemini-2.5-pro-preview-05-06",
-	"gemini-2.5-pro-preview-06-05",
-	"gemini-1.5-pro",
+	
+	// Specialized models
 	"gemini-2.0-flash-preview-image-generation",
 	"imagen-3.0-generate-002",
 	"veo-2.0-generate-001",
@@ -206,7 +205,7 @@ impl Adapter for GeminiAdapter {
 					let model_name_str = &model.model_name;
 					// Models known/expected to support response_json_schema with v1alpha
 					let supports_v1alpha_json_schema =
-						matches!(model_name_str.as_ref(), "gemini-2.5-flash-preview-05-20" | "gemini-2.5-pro-preview-05-06" | "gemini-2.5-pro-preview-06-05" | "gemini-2.5-flash-lite-preview-06-17");
+						matches!(model_name_str.as_ref(), "gemini-2.5-pro" | "gemini-2.5-flash" | "gemini-2.5-flash-lite-preview-06-17");
 
 					payload.x_insert("/generationConfig/responseMimeType", "application/json")?;
 					if supports_v1alpha_json_schema {
@@ -321,7 +320,7 @@ impl Adapter for GeminiAdapter {
 		// Potentially modify URL for v1alpha if JsonSchemaSpec is used with a compatible model
 		if let Some(ChatResponseFormat::JsonSchemaSpec(_)) = options_set.response_format() {
 			let model_name_str = &model.model_name;
-			if matches!(model_name_str.as_ref(), "gemini-2.5-flash-preview-05-20" | "gemini-2.5-pro-preview-05-06" | "gemini-2.5-pro-preview-06-05" | "gemini-2.5-flash-lite-preview-06-17") {
+			if matches!(model_name_str.as_ref(), "gemini-2.5-pro" | "gemini-2.5-flash" | "gemini-2.5-flash-lite-preview-06-17") {
 				// Only replace if the URL is indeed a v1beta URL from the default endpoint.
 				if final_url.starts_with("https://generativelanguage.googleapis.com/v1beta/") {
 					final_url = final_url.replacen(
