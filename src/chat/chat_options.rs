@@ -29,6 +29,8 @@ pub enum HarmCategory {
 pub enum HarmBlockThreshold {
 	#[serde(rename = "BLOCK_NONE")]
 	BlockNone,
+	#[serde(rename = "OFF")]
+	Off,
 	#[serde(rename = "BLOCK_ONLY_HIGH")]
 	BlockOnlyHigh,
 	#[serde(rename = "BLOCK_MEDIUM_AND_ABOVE")]
