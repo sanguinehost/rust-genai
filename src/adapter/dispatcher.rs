@@ -16,6 +16,8 @@ use reqwest::RequestBuilder;
 use super::groq::GroqAdapter;
 use crate::adapter::deepseek::DeepSeekAdapter;
 use crate::adapter::xai::XaiAdapter;
+#[cfg(feature = "llamacpp")]
+use crate::adapter::adapters::llamacpp::LlamaCppAdapter;
 use crate::resolver::{AuthData, Endpoint};
 
 /// A construct that allows dispatching calls to the Adapters.
@@ -36,6 +38,8 @@ impl AdapterDispatcher {
 			AdapterKind::Groq => GroqAdapter::default_endpoint(),
 			AdapterKind::Xai => XaiAdapter::default_endpoint(),
 			AdapterKind::DeepSeek => DeepSeekAdapter::default_endpoint(),
+			#[cfg(feature = "llamacpp")]
+			AdapterKind::LlamaCpp => LlamaCppAdapter::default_endpoint(),
 		}
 	}
 
@@ -49,6 +53,8 @@ impl AdapterDispatcher {
 			AdapterKind::Groq => GroqAdapter::default_auth(),
 			AdapterKind::Xai => XaiAdapter::default_auth(),
 			AdapterKind::DeepSeek => DeepSeekAdapter::default_auth(),
+			#[cfg(feature = "llamacpp")]
+			AdapterKind::LlamaCpp => LlamaCppAdapter::default_auth(),
 		}
 	}
 
@@ -62,6 +68,8 @@ impl AdapterDispatcher {
 			AdapterKind::Groq => GroqAdapter::all_model_names(kind).await,
 			AdapterKind::Xai => XaiAdapter::all_model_names(kind).await,
 			AdapterKind::DeepSeek => DeepSeekAdapter::all_model_names(kind).await,
+			#[cfg(feature = "llamacpp")]
+			AdapterKind::LlamaCpp => LlamaCppAdapter::all_model_names(kind).await,
 		}
 	}
 
@@ -76,6 +84,8 @@ impl AdapterDispatcher {
 			AdapterKind::Groq => GroqAdapter::get_service_url(model, service_type, endpoint),
 			AdapterKind::Xai => XaiAdapter::get_service_url(model, service_type, endpoint),
 			AdapterKind::DeepSeek => DeepSeekAdapter::get_service_url(model, service_type, endpoint),
+			#[cfg(feature = "llamacpp")]
+			AdapterKind::LlamaCpp => LlamaCppAdapter::get_service_url(model, service_type, endpoint),
 		}
 	}
 
@@ -97,6 +107,8 @@ impl AdapterDispatcher {
 			AdapterKind::Groq => GroqAdapter::to_web_request_data(target, service_type, chat_req, options_set),
 			AdapterKind::Xai => XaiAdapter::to_web_request_data(target, service_type, chat_req, options_set),
 			AdapterKind::DeepSeek => DeepSeekAdapter::to_web_request_data(target, service_type, chat_req, options_set),
+			#[cfg(feature = "llamacpp")]
+			AdapterKind::LlamaCpp => LlamaCppAdapter::to_web_request_data(target, service_type, chat_req, options_set),
 		}
 	}
 
@@ -114,6 +126,8 @@ impl AdapterDispatcher {
 			AdapterKind::Groq => GroqAdapter::to_chat_response(model_iden, web_response, options_set),
 			AdapterKind::Xai => XaiAdapter::to_chat_response(model_iden, web_response, options_set),
 			AdapterKind::DeepSeek => DeepSeekAdapter::to_chat_response(model_iden, web_response, options_set),
+			#[cfg(feature = "llamacpp")]
+			AdapterKind::LlamaCpp => LlamaCppAdapter::to_chat_response(model_iden, web_response, options_set),
 		}
 	}
 
@@ -131,6 +145,38 @@ impl AdapterDispatcher {
 			AdapterKind::Groq => GroqAdapter::to_chat_stream(model_iden, reqwest_builder, options_set),
 			AdapterKind::Xai => XaiAdapter::to_chat_stream(model_iden, reqwest_builder, options_set),
 			AdapterKind::DeepSeek => DeepSeekAdapter::to_chat_stream(model_iden, reqwest_builder, options_set),
+			#[cfg(feature = "llamacpp")]
+			AdapterKind::LlamaCpp => LlamaCppAdapter::to_chat_stream(model_iden, reqwest_builder, options_set),
+		}
+	}
+
+	/// Execute chat completion natively (for adapters that don't use HTTP)
+	#[cfg(feature = "llamacpp")]
+	pub async fn exec_chat_native(
+		target: ServiceTarget,
+		chat_req: ChatRequest,
+		options_set: ChatOptionsSet<'_, '_>,
+	) -> Result<ChatResponse> {
+		match target.model.adapter_kind {
+			AdapterKind::LlamaCpp => LlamaCppAdapter::exec_chat_native(target, chat_req, options_set).await,
+			_ => Err(Error::UnsupportedOperation(
+				format!("Native execution not supported for adapter kind: {:?}", target.model.adapter_kind)
+			)),
+		}
+	}
+
+	/// Execute streaming chat completion natively (for adapters that don't use HTTP)
+	#[cfg(feature = "llamacpp")]
+	pub async fn exec_chat_stream_native(
+		target: ServiceTarget,
+		chat_req: ChatRequest,
+		options_set: ChatOptionsSet<'_, '_>,
+	) -> Result<ChatStreamResponse> {
+		match target.model.adapter_kind {
+			AdapterKind::LlamaCpp => LlamaCppAdapter::exec_chat_stream_native(target, chat_req, options_set).await,
+			_ => Err(Error::UnsupportedOperation(
+				format!("Native streaming not supported for adapter kind: {:?}", target.model.adapter_kind)
+			)),
 		}
 	}
 

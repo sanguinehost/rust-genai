@@ -1,6 +1,6 @@
 # genai - Multi-AI Providers Library for Rust
 
-Currently supports natively: **OpenAI**, **Anthropic**, **Gemini**, **XAI/Grok**, **Ollama**,  **Groq**, **DeepSeek** (deepseek.com & Groq),  **Cohere** (more to come)
+Currently supports natively: **OpenAI**, **Anthropic**, **Gemini**, **XAI/Grok**, **Ollama**,  **Groq**, **DeepSeek** (deepseek.com & Groq),  **Cohere**, **LlamaCpp** (more to come)
 
 Also, allow custom URL with `ServiceTargetResolver` (see [examples/c06-target-resolver.rs](examples/c06-target-resolver.rs))
 
@@ -64,7 +64,7 @@ Here are some of the api change. Check [CHANGELOG](CHANGELOG.md) for more info
 
 ## Key Features
 
-- Native Multi-AI Provider/Model: OpenAI, Anthropic, Gemini, Ollama, Groq, xAI, DeepSeek (Direct chat and stream) (see [examples/c00-readme.rs](examples/c00-readme.rs))
+- Native Multi-AI Provider/Model: OpenAI, Anthropic, Gemini, Ollama, Groq, xAI, DeepSeek, LlamaCpp (Direct chat and stream) (see [examples/c00-readme.rs](examples/c00-readme.rs))
 - DeepSeekR1 support, with `reasoning_content` (and stream support) + DeepSeek Groq and Ollama support (and `reasoning_content` normalization)
 - Image Analysis (for OpenAI, Gemini flash-2, Anthropic) (see [examples/c07-image.rs](examples/c07-image.rs))
 - Custom Auth/API Key (see [examples/c02-auth.rs](examples/c02-auth.rs))
@@ -92,6 +92,7 @@ const MODEL_GROQ: &str = "llama3-8b-8192";
 const MODEL_OLLAMA: &str = "gemma:2b"; // sh: `ollama pull gemma:2b`
 const MODEL_XAI: &str = "grok-beta";
 const MODEL_DEEPSEEK: &str = "deepseek-chat";
+const MODEL_LLAMACPP: &str = "local/model.gguf"; // Path to GGUF model file
 
 // NOTE: These are the default environment keys for each AI Adapter Type.
 //       They can be customized; see `examples/c02-auth.rs`
@@ -105,6 +106,7 @@ const MODEL_AND_KEY_ENV_NAME_LIST: &[(&str, &str)] = &[
 	(MODEL_XAI, "XAI_API_KEY"),
 	(MODEL_DEEPSEEK, "DEEPSEEK_API_KEY"),
 	(MODEL_OLLAMA, ""),
+	(MODEL_LLAMACPP, ""), // No API key needed for local models
 ];
 
 // NOTE: Model to AdapterKind (AI Provider) type mapping rule
@@ -113,6 +115,7 @@ const MODEL_AND_KEY_ENV_NAME_LIST: &[(&str, &str)] = &[
 //  - starts_with "command"  -> Cohere
 //  - starts_with "gemini"   -> Gemini
 //  - model in Groq models   -> Groq
+//  - starts_with "local/" or ends_with ".gguf" -> LlamaCpp (when feature enabled)
 //  - For anything else      -> Ollama
 //
 // This can be customized; see `examples/c03-mapper.rs`
@@ -200,7 +203,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## ChatOptions
 
 - **(1)** - **OpenAI compatibles** notes
-	- Models: OpenAI, DeepSeek, Groq, Ollama, xAI
+	- Models: OpenAI, DeepSeek, Groq, Ollama, xAI, LlamaCpp
 
 | Property      | OpenAI Compatibles (*1) | Anthropic                   | Gemini `generationConfig.` | Cohere        |
 |---------------|-------------------------|-----------------------------|----------------------------|---------------|
@@ -220,7 +223,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 
 - **(1)** - **OpenAI compatibles** notes
-	- Models: OpenAI, DeepSeek, Groq, Ollama, xAI
+	- Models: OpenAI, DeepSeek, Groq, Ollama, xAI, LlamaCpp
 	- For **Groq**, the property `x_groq.usage.`  
 	- At this point, **Ollama** does not emit input/output tokens when streaming due to the Ollama OpenAI compatibility layer limitation. (see [ollama #4448 - Streaming Chat Completion via OpenAI API should support stream option to include Usage](https://github.com/ollama/ollama/issues/4448))
 	- `prompt_tokens_details` and `completion_tokens_details` will have the value sent by the compatible provider (or None)

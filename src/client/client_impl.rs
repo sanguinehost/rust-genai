@@ -61,6 +61,13 @@ impl Client {
 		let target = self.config().resolve_service_target(model).await?;
 		let model = target.model.clone();
 
+		// Check if this is a native adapter that doesn't use HTTP
+		#[cfg(feature = "llamacpp")]
+		if matches!(model.adapter_kind, AdapterKind::LlamaCpp) {
+			return AdapterDispatcher::exec_chat_native(target, chat_req, options_set).await;
+		}
+
+		// Standard web-based execution path
 		let WebRequestData { headers, payload, url } =
 			AdapterDispatcher::to_web_request_data(target, ServiceType::Chat, chat_req, options_set.clone())?;
 
@@ -92,6 +99,14 @@ impl Client {
 		let model = self.default_model(model)?;
 		let target = self.config().resolve_service_target(model).await?;
 		let model = target.model.clone();
+
+		// Check if this is a native adapter that doesn't use HTTP
+		#[cfg(feature = "llamacpp")]
+		if matches!(model.adapter_kind, AdapterKind::LlamaCpp) {
+			return AdapterDispatcher::exec_chat_stream_native(target, chat_req, options_set).await;
+		}
+
+		// Standard web-based streaming execution path
 		let auth_data = target.auth.clone();
 
 		let WebRequestData {

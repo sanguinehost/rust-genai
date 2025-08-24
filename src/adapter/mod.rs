@@ -12,7 +12,7 @@
 
 mod adapter_kind;
 mod adapter_types;
-mod adapters;
+pub mod adapters;
 mod dispatcher;
 
 // -- Flatten (private, crate, public)
@@ -22,6 +22,7 @@ pub(crate) use adapter_types::*;
 pub(crate) use dispatcher::*;
 
 pub use adapter_kind::*;
+
 
 // -- Crate modules
 pub(crate) mod inter_stream;

@@ -1,5 +1,15 @@
 `.` minor | `-` Fix | `+` Addition | `^` improvement | `!` Change | `*` Refactor
 
+2025-08-24 - v0.3.10
+
+- `+` llamacpp - Native LlamaCpp adapter with comprehensive tool calling support
+  - Direct GGUF model loading and inference using llama-cpp-rs
+  - Full OpenAI-compatible tool calling with schema-to-GBNF grammar conversion
+  - Support for multiple model formats: Llama 3.x, Functionary, Hermes, Generic
+  - Streaming and non-streaming chat completion
+  - CUDA and CPU backend support
+  - Comprehensive test coverage with integration tests
+
 2025-06-18 - v0.3.9
 
 - `+` gemini - add support for `gemini-2.5-flash-lite-preview-06-17`

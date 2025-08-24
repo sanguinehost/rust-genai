@@ -74,6 +74,14 @@ pub enum Error {
 	#[display("Adapter '{adapter_kind}' does not support feature '{feature}'")]
 	AdapterFeatureNotSupported { adapter_kind: AdapterKind, feature: String },
 
+	/// General adapter error.
+	#[display("Adapter error: {_0}")]
+	AdapterError(String),
+
+	/// Unsupported operation error.
+	#[display("Unsupported operation: {_0}")]
+	UnsupportedOperation(String),
+
 	// -- Chat Stream
 	#[display("Failed to parse stream data for model '{model_iden}'.\nCause: {serde_error}")]
 	StreamParse {

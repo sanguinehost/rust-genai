@@ -28,6 +28,9 @@ pub enum AdapterKind {
 	Xai,
 	/// For `DeepSeek`
 	DeepSeek,
+	/// For native llama.cpp integration with local models
+	#[cfg(feature = "llamacpp")]
+	LlamaCpp,
 	// Note: Variants will probably be suffixed
 	// AnthropicBedrock,
 }
@@ -46,6 +49,8 @@ impl AdapterKind {
 			Self::Groq => "Groq",
 			Self::Xai => "xAi",
 			Self::DeepSeek => "DeepSeek",
+			#[cfg(feature = "llamacpp")]
+			Self::LlamaCpp => "LlamaCpp",
 		}
 	}
 
@@ -61,6 +66,8 @@ impl AdapterKind {
 			Self::Groq => "groq",
 			Self::Xai => "xai",
 			Self::DeepSeek => "deepseek",
+			#[cfg(feature = "llamacpp")]
+			Self::LlamaCpp => "llamacpp",
 		}
 	}
 }
@@ -79,6 +86,8 @@ impl AdapterKind {
 			Self::Xai => Some(XaiAdapter::API_KEY_DEFAULT_ENV_NAME),
 			Self::DeepSeek => Some(DeepSeekAdapter::API_KEY_DEFAULT_ENV_NAME),
 			Self::Ollama => None,
+			#[cfg(feature = "llamacpp")]
+			Self::LlamaCpp => None,
 		}
 	}
 }
@@ -107,23 +116,33 @@ impl AdapterKind {
 			|| model.starts_with("o1")
 			|| model.starts_with("chatgpt")
 		{
-			Ok(Self::OpenAI)
+			return Ok(Self::OpenAI);
 		} else if model.starts_with("claude") {
-			Ok(Self::Anthropic)
+			return Ok(Self::Anthropic);
 		} else if model.starts_with("command") {
-			Ok(Self::Cohere)
+			return Ok(Self::Cohere);
 		} else if model.starts_with("gemini") || model.starts_with("imagen") || model.starts_with("veo") {
-			Ok(Self::Gemini)
+			return Ok(Self::Gemini);
 		} else if model.starts_with("grok") {
-			Ok(Self::Xai)
+			return Ok(Self::Xai);
 		} else if deepseek::MODELS.contains(&model) {
-			Ok(Self::DeepSeek)
+			return Ok(Self::DeepSeek);
 		} else if groq::MODELS.contains(&model) {
 			return Ok(Self::Groq);
 		}
-		// For now, fallback to Ollama
-		else {
-			Ok(Self::Ollama)
+		#[cfg(feature = "llamacpp")]
+		{
+			if model.starts_with("local/") 
+				|| model.starts_with("llama") 
+				|| model.starts_with("mistral") 
+				|| model.starts_with("phi") 
+				|| model.ends_with(".gguf") 
+			{
+				return Ok(Self::LlamaCpp);
+			}
 		}
+		
+		// For now, fallback to Ollama
+		Ok(Self::Ollama)
 	}
 }
