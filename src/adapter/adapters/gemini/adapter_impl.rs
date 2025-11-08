@@ -1,53 +1,26 @@
-use super::streamer::GeminiStreamer;
 use crate::adapter::adapters::support::get_api_key;
+use crate::adapter::gemini::GeminiStreamer;
 use crate::adapter::{Adapter, AdapterKind, ServiceType, WebRequestData};
 use crate::chat::{
-	ChatOptionsSet,
-	ChatRequest,
-	ChatResponse,
-	ChatResponseFormat,
-	ChatRole,
-	ChatStream,
-	ChatStreamResponse,
-	CompletionTokensDetails,
-	ContentPart,
-	ImagenGenerateImagesRequest,
-	ImagenGenerateImagesResponse, // Added for Imagen
-	MediaSource,                  // Added for document understanding
-	MessageContent,
-	PromptTokensDetails,
-	ReasoningEffort,
-	ToolCall,
-	Usage,
-	VeoGenerateVideosRequest,
-	VeoGenerateVideosResponse,
-	VeoOperationResult,
-	VeoOperationStatusResponse,
+	Binary, BinarySource, ChatOptionsSet, ChatRequest, ChatResponse, ChatResponseFormat, ChatRole, ChatStream,
+	ChatStreamResponse, CompletionTokensDetails, ContentPart, MessageContent, PromptTokensDetails, ReasoningEffort,
+	ToolCall, Usage,
 };
 use crate::resolver::{AuthData, Endpoint};
 use crate::webc::{WebResponse, WebStream};
-use crate::{Error, ModelIden, Result, ServiceTarget};
+use crate::{Error, Headers, ModelIden, Result, ServiceTarget};
 use reqwest::RequestBuilder;
 use serde_json::{Value, json};
 use value_ext::JsonValueExt;
 
 pub struct GeminiAdapter;
 
+// Note: Those model names are just informative, as the Gemini AdapterKind is selected on `startsWith("gemini")`
 const MODELS: &[&str] = &[
-	// Latest GA models
+	//
 	"gemini-2.5-pro",
 	"gemini-2.5-flash",
 	"gemini-2.5-flash-lite",
-
-	// Preview models (09-2025)
-	"gemini-2.5-flash-preview-09-2025",
-	"gemini-2.5-flash-lite-preview-09-2025",
-
-	// Specialized models
-	"gemini-2.5-flash-image",
-	"gemini-2.0-flash-preview-image-generation",
-	"imagen-3.0-generate-002",
-	"veo-2.0-generate-001",
 ];
 
 // Per gemini doc (https://x.com/jeremychone/status/1916501987371438372)
@@ -77,23 +50,22 @@ impl Adapter for GeminiAdapter {
 
 	/// Note: For now, this returns the common models (see above)
 	async fn all_model_names(_kind: AdapterKind) -> Result<Vec<String>> {
-		Ok(MODELS.iter().map(ToString::to_string).collect())
-	}
-	/// NOTE: As Google Gemini has decided to put their `API_KEY` in the URL,
-	///       this will return the URL without the `API_KEY` in it. The `API_KEY` will need to be added by the caller.
-	fn get_service_url(model: &ModelIden, service_type: ServiceType, endpoint: Endpoint) -> String {
-		let base_url = endpoint.base_url();
-		let model_name = model.model_name.clone();
-		match service_type {
-			ServiceType::Chat => format!("{base_url}models/{model_name}:generateContent"),
-			ServiceType::ChatStream => format!("{base_url}models/{model_name}:streamGenerateContent"),
-			ServiceType::ImageGenerationImagen => format!("{base_url}models/{model_name}:predict"),
-			ServiceType::VideoGenerationVeo => format!("{base_url}models/{model_name}:predictLongRunning"),
-		}
+		Ok(MODELS.iter().map(|s| s.to_string()).collect())
 	}
 
-	#[allow(clippy::too_many_lines)]
-	#[allow(clippy::cognitive_complexity)]
+	/// NOTE: As Google Gemini has decided to put their API_KEY in the URL,
+	///       this will return the URL without the API_KEY in it. The API_KEY will need to be added by the caller.
+	fn get_service_url(model: &ModelIden, service_type: ServiceType, endpoint: Endpoint) -> Result<String> {
+		let base_url = endpoint.base_url();
+		let (model_name, _) = model.model_name.as_model_name_and_namespace();
+		let url = match service_type {
+			ServiceType::Chat => format!("{base_url}models/{model_name}:generateContent"),
+			ServiceType::ChatStream => format!("{base_url}models/{model_name}:streamGenerateContent"),
+			ServiceType::Embed => format!("{base_url}models/{model_name}:embedContent"), // Gemini embeddings API
+		};
+		Ok(url)
+	}
+
 	fn to_web_request_data(
 		target: ServiceTarget,
 		service_type: ServiceType,
@@ -101,29 +73,29 @@ impl Adapter for GeminiAdapter {
 		options_set: ChatOptionsSet<'_, '_>,
 	) -> Result<WebRequestData> {
 		let ServiceTarget { endpoint, auth, model } = target;
+		let (model_name, _) = model.model_name.as_model_name_and_namespace();
 
 		// -- api_key
-		let api_key = get_api_key(&auth, &model)?;
+		let api_key = get_api_key(auth, &model)?;
+
+		// -- headers (empty for gemini)
+		let headers = Headers::from(("x-goog-api-key".to_string(), api_key.to_string()));
 
 		// -- Reasoning Budget
-		let (model, reasoning_effort) = match (model, options_set.reasoning_effort()) {
+		let (provider_model_name, reasoning_budget) = match (model_name, options_set.reasoning_effort()) {
 			// No explicity reasoning_effor, try to infer from model name suffix (supports -zero)
 			(model, None) => {
-				let model_name: &str = &model.model_name;
+				// let model_name: &str = &model.model_name;
 				if let Some((prefix, last)) = model_name.rsplit_once('-') {
 					let reasoning = match last {
-						"zero" => Some(ReasoningEffort::Budget(REASONING_ZERO)),
-						"low" => Some(ReasoningEffort::Budget(REASONING_LOW)),
-						"medium" => Some(ReasoningEffort::Budget(REASONING_MEDIUM)),
-						"high" => Some(ReasoningEffort::Budget(REASONING_HIGH)),
+						"zero" => Some(REASONING_ZERO),
+						"low" => Some(REASONING_LOW),
+						"medium" => Some(REASONING_MEDIUM),
+						"high" => Some(REASONING_HIGH),
 						_ => None,
 					};
 					// create the model name if there was a `-..` reasoning suffix
-					let model = if reasoning.is_some() {
-						model.from_name(prefix)
-					} else {
-						model
-					};
+					let model = if reasoning.is_some() { prefix } else { model };
 
 					(model, reasoning)
 				} else {
@@ -133,10 +105,12 @@ impl Adapter for GeminiAdapter {
 			// If reasoning effort, turn the low, medium, budget ones into Budget
 			(model, Some(effort)) => {
 				let effort = match effort {
-					ReasoningEffort::Low => ReasoningEffort::Budget(REASONING_LOW),
-					ReasoningEffort::Medium => ReasoningEffort::Budget(REASONING_MEDIUM),
-					ReasoningEffort::High => ReasoningEffort::Budget(REASONING_HIGH),
-					ReasoningEffort::Budget(budget) => ReasoningEffort::Budget(*budget),
+					// -- for now, match minimal to Low (because zero is not supported by 2.5 pro)
+					ReasoningEffort::Minimal => REASONING_LOW,
+					ReasoningEffort::Low => REASONING_LOW,
+					ReasoningEffort::Medium => REASONING_MEDIUM,
+					ReasoningEffort::High => REASONING_HIGH,
+					ReasoningEffort::Budget(budget) => *budget,
 				};
 				(model, Some(effort))
 			}
@@ -147,7 +121,7 @@ impl Adapter for GeminiAdapter {
 			system,
 			contents,
 			tools,
-		} = Self::into_gemini_request_parts(model.clone(), chat_req)?;
+		} = Self::into_gemini_request_parts(&model, chat_req)?;
 
 		// -- Playload
 		let mut payload = json!({
@@ -155,16 +129,9 @@ impl Adapter for GeminiAdapter {
 		});
 
 		// -- Set the reasoning effort
-		if let Some(ReasoningEffort::Budget(budget)) = reasoning_effort {
+		if let Some(budget) = reasoning_budget {
 			payload.x_insert("/generationConfig/thinkingConfig/thinkingBudget", budget)?;
 		}
-
-		if options_set.include_thoughts().is_some_and(|v| v) {
-			payload.x_insert("/generationConfig/thinkingConfig/includeThoughts", true)?;
-		}
-
-		// -- headers (empty for gemini, since API_KEY is in url)
-		let headers = vec![];
 
 		// Note: It's unclear from the spec if the content of systemInstruction should have a role.
 		//       Right now, it is omitted (since the spec states it can only be "user" or "model")
@@ -180,49 +147,23 @@ impl Adapter for GeminiAdapter {
 
 		// -- Tools
 		if let Some(tools) = tools {
-			payload.x_insert(
-				"tools",
-				json!({
-					"function_declarations": tools
-				}),
-			)?;
+			payload.x_insert("tools", tools)?;
 		}
 
 		// -- Response Format
-		if let Some(response_format) = options_set.response_format() {
-			match response_format {
-				ChatResponseFormat::JsonSpec(st_json) => {
-					payload.x_insert("/generationConfig/responseMimeType", "application/json")?;
-					let mut schema = st_json.schema.clone();
-					schema.x_walk(|parent_map, name| {
-						if name == "additionalProperties" {
-							parent_map.remove("additionalProperties");
-						}
-						true
-					});
-					payload.x_insert("/generationConfig/responseSchema", schema)?;
+		if let Some(ChatResponseFormat::JsonSpec(st_json)) = options_set.response_format() {
+			// x_insert
+			//     responseMimeType: "application/json",
+			// responseSchema: {
+			payload.x_insert("/generationConfig/responseMimeType", "application/json")?;
+			let mut schema = st_json.schema.clone();
+			schema.x_walk(|parent_map, name| {
+				if name == "additionalProperties" {
+					parent_map.remove("additionalProperties");
 				}
-				ChatResponseFormat::EnumSpec(enum_spec) => {
-					payload.x_insert("/generationConfig/responseMimeType", enum_spec.mime_type.clone())?;
-					payload.x_insert("/generationConfig/responseSchema", enum_spec.schema.clone())?;
-				}
-				ChatResponseFormat::JsonSchemaSpec(json_schema_spec) => {
-					// Always use v1beta endpoint with responseSchema according to Google documentation
-					// This is the officially supported way for structured output
-					payload.x_insert("/generationConfig/responseMimeType", "application/json")?;
-					payload.x_insert("/generationConfig/responseSchema", json_schema_spec.schema.clone())?;
-				}
-				ChatResponseFormat::JsonMode => {
-					// Gemini does not have a direct "json_mode" like OpenAI.
-					// The closest is to set responseMimeType to application/json without a schema.
-					// However, the documentation recommends using responseSchema for constrained JSON.
-					// For now, we will not set anything for JsonMode, as it's typically handled by prompt engineering.
-					// If a schema is not provided, the model is not constrained to output JSON.
-					tracing::warn!(
-						"GeminiAdapter: ChatResponseFormat::JsonMode is not directly supported. Consider using JsonSpec with a schema for constrained JSON output."
-					);
-				}
-			}
+				true
+			});
+			payload.x_insert("/generationConfig/responseSchema", schema)?;
 		}
 
 		// -- Add supported ChatOptions
@@ -241,83 +182,11 @@ impl Adapter for GeminiAdapter {
 			payload.x_insert("/generationConfig/topP", top_p)?;
 		}
 
-		// -- Add newly supported ChatOptions
-		if let Some(top_k) = options_set.top_k() {
-			payload.x_insert("/generationConfig/topK", top_k)?;
-		}
-		if let Some(seed) = options_set.seed() {
-			payload.x_insert("/generationConfig/seed", seed)?;
-		}
-		if let Some(presence_penalty) = options_set.presence_penalty() {
-			payload.x_insert("/generationConfig/presencePenalty", presence_penalty)?;
-		}
-		if let Some(frequency_penalty) = options_set.frequency_penalty() {
-			payload.x_insert("/generationConfig/frequencyPenalty", frequency_penalty)?;
-		}
-
-		// -- Candidate Count
-		if let Some(candidate_count) = options_set.candidate_count() {
-			payload.x_insert("/generationConfig/candidateCount", candidate_count)?;
-			// TODO: Adapt response parsing to handle multiple candidates if candidate_count > 1
-		}
-
-		// -- Cached Content
-		if let Some(cached_content_id) = options_set.cached_content_id() {
-			payload.x_insert("cachedContent", cached_content_id)?;
-		}
-
-		// -- Tool Config
-		let mut tool_config_payload = json!({});
-		let mut function_calling_config_payload = json!({});
-		let mut function_calling_config_added = false;
-
-		if let Some(mode) = options_set.function_calling_mode() {
-			function_calling_config_payload.x_insert("mode", mode)?;
-			function_calling_config_added = true;
-		}
-
-		if let Some(allowed_names) = options_set.allowed_function_names() {
-			if !allowed_names.is_empty() {
-				function_calling_config_payload.x_insert("allowedFunctionNames", allowed_names)?;
-				function_calling_config_added = true;
-			}
-		}
-
-		if function_calling_config_added {
-			tool_config_payload.x_insert("functionCallingConfig", function_calling_config_payload)?;
-			payload.x_insert("toolConfig", tool_config_payload)?;
-		}
-
-		// -- Response Modalities (for Gemini image generation)
-		if let Some(modalities) = options_set.response_modalities() {
-			if !modalities.is_empty() {
-				payload.x_insert("/generationConfig/responseModalities", modalities)?;
-			}
-		}
-
-		// -- Safety Settings
-		if let Some(safety_settings) = options_set.safety_settings() {
-			if !safety_settings.is_empty() {
-				payload.x_insert("safetySettings", safety_settings)?;
-			}
-		}
-
 		// -- url
-		// NOTE: Somehow, Google decided to put the API key in the URL.
-		//       This should be considered an antipattern from a security point of view
-		//       even if it is done by the well respected Google. Everybody can make mistake once in a while.
-		// e.g., '...models/gemini-1.5-flash-latest:generateContent?key=YOUR_API_KEY'
-		let mut final_url = Self::get_service_url(&model, service_type, endpoint);
+		let provider_model = model.from_name(provider_model_name);
+		let url = Self::get_service_url(&provider_model, service_type, endpoint)?;
 
-		// Always use v1beta endpoint for all requests including structured output
-
-		let final_url_with_key = format!("{final_url}?key={api_key}");
-
-		Ok(WebRequestData {
-			url: final_url_with_key,
-			headers,
-			payload,
-		})
+		Ok(WebRequestData { url, headers, payload })
 	}
 
 	fn to_chat_response(
@@ -326,40 +195,35 @@ impl Adapter for GeminiAdapter {
 		options_set: ChatOptionsSet<'_, '_>,
 	) -> Result<ChatResponse> {
 		let WebResponse { mut body, .. } = web_response;
+
+		let captured_raw_body = options_set.capture_raw_body().unwrap_or_default().then(|| body.clone());
+
 		// -- Capture the provider_model_iden
 		// TODO: Need to be implemented (if available), for now, just clone model_iden
 		let provider_model_name: Option<String> = body.x_remove("modelVersion").ok();
 		let provider_model_iden = model_iden.from_optional_name(provider_model_name);
+		let gemini_response = Self::body_to_gemini_chat_response(&model_iden.clone(), body)?;
+		let GeminiChatResponse {
+			content: gemini_content,
+			usage,
+		} = gemini_response;
 
-		let gemini_response = Self::body_to_gemini_chat_response(&model_iden, body, &options_set)?;
-		let GeminiChatResponse { contents, usage } = gemini_response;
-
-		let mut response_contents: Vec<MessageContent> = Vec::new();
-		let mut reasoning_parts: Vec<String> = Vec::new();
-
-		for content in contents {
-			match content {
-				GeminiChatContent::Thought(thought) => reasoning_parts.push(thought),
-				other => response_contents.push(other.into()),
+		// FIXME: Needs to take the content list
+		let mut content: MessageContent = MessageContent::default();
+		for g_item in gemini_content {
+			match g_item {
+				GeminiChatContent::Text(text) => content.push(text),
+				GeminiChatContent::ToolCall(tool_call) => content.push(tool_call),
 			}
 		}
 
-		let reasoning_content = if reasoning_parts.is_empty() {
-			None
-		} else {
-			Some(reasoning_parts.join("\n"))
-		};
-
-		// If the original request was for a single candidate (or default),
-		// and we got no content, the response_contents vec will be empty.
-		// Otherwise, it will contain one or more items.
-
 		Ok(ChatResponse {
-			contents: response_contents,
-			reasoning_content,
+			content,
+			reasoning_content: None,
 			model_iden,
 			provider_model_iden,
 			usage,
+			captured_raw_body,
 		})
 	}
 
@@ -370,7 +234,7 @@ impl Adapter for GeminiAdapter {
 	) -> Result<ChatStreamResponse> {
 		let web_stream = WebStream::new_with_pretty_json_array(reqwest_builder);
 
-		let gemini_stream = GeminiStreamer::new(web_stream, model_iden.clone(), &options_set);
+		let gemini_stream = GeminiStreamer::new(web_stream, model_iden.clone(), options_set);
 		let chat_stream = ChatStream::from_inter_stream(gemini_stream);
 
 		Ok(ChatStreamResponse {
@@ -378,128 +242,84 @@ impl Adapter for GeminiAdapter {
 			stream: chat_stream,
 		})
 	}
+
+	fn to_embed_request_data(
+		service_target: crate::ServiceTarget,
+		embed_req: crate::embed::EmbedRequest,
+		options_set: crate::embed::EmbedOptionsSet<'_, '_>,
+	) -> Result<crate::adapter::WebRequestData> {
+		super::embed::to_embed_request_data(service_target, embed_req, options_set)
+	}
+
+	fn to_embed_response(
+		model_iden: crate::ModelIden,
+		web_response: crate::webc::WebResponse,
+		options_set: crate::embed::EmbedOptionsSet<'_, '_>,
+	) -> Result<crate::embed::EmbedResponse> {
+		super::embed::to_embed_response(model_iden, web_response, options_set)
+	}
 }
 
 // region:    --- Support
 
-/// Support functions for `GeminiAdapter`
+/// Support functions for GeminiAdapter
 impl GeminiAdapter {
-	pub(super) fn body_to_gemini_chat_response(
-		model_iden: &ModelIden,
-		mut body: Value,
-		options_set: &ChatOptionsSet<'_, '_>,
-	) -> Result<GeminiChatResponse> {
+	pub(super) fn body_to_gemini_chat_response(model_iden: &ModelIden, mut body: Value) -> Result<GeminiChatResponse> {
 		// If the body has an `error` property, then it is assumed to be an error.
 		if body.get("error").is_some() {
-			return Err(Error::StreamEventError {
+			return Err(Error::ChatResponse {
 				model_iden: model_iden.clone(),
 				body,
 			});
 		}
 
-		// Take all candidates
-		let candidates = body.x_take::<Vec<Value>>("/candidates")?;
-		let mut gemini_contents: Vec<GeminiChatContent> = Vec::new();
+		let mut content: Vec<GeminiChatContent> = Vec::new();
 
-		for mut candidate_json in candidates {
-			// A candidate can have multiple parts (text, image) or a functionCall.
-			let candidate_content_parts_json = candidate_json.x_take::<Vec<Value>>("/content/parts")?;
-			let mut content_parts: Vec<ContentPart> = Vec::new();
-			let mut has_image_content = false;
+		// -- Read multipart
+		let parts = match body.x_take::<Vec<Value>>("/candidates/0/content/parts") {
+			Ok(parts) => parts,
+			Err(_) => {
+				let finish_reason = body.x_remove::<String>("/candidates/finishReason").ok();
+				let usage_metadata = body.x_remove::<Value>("/usageMetadata").ok();
+				let body = json!({
+					"finishReason": finish_reason,
+					"usageMetadata": usage_metadata,
+				});
+				return Err(Error::ChatResponse {
+					model_iden: model_iden.clone(),
+					body,
+				});
+			}
+		};
 
-			for mut part_json in candidate_content_parts_json {
-				// -- Check for thought
-				let is_thought = part_json.x_get::<bool>("thought").ok().is_some_and(|v| v);
-
-				if let Ok(fc_json) = part_json.x_take::<Value>("functionCall") {
-					// This part is a function call
-					gemini_contents.push(GeminiChatContent::ToolCall(ToolCall {
-						call_id: fc_json.x_get("name").unwrap_or_else(|_| String::new()), // Assuming name is used as call_id for Gemini
-						fn_name: fc_json.x_get("name").unwrap_or_else(|_| String::new()),
-						fn_arguments: fc_json.x_get("args").unwrap_or(Value::Null),
-					}));
-					// Assuming a functionCall part is exclusive in a candidate's content.parts array for simplicity here.
-					// If not, the logic to combine with other parts would be more complex.
-					content_parts.clear(); // Clear any previously parsed text/image parts for this candidate
-					break; // Move to the next candidate
-				} else if let Ok(text_value) = part_json.x_take::<Value>("text") {
-					// Attempt to convert the Value to a String. This handles cases where the 'text' field
-					// might be a number, boolean, or null, which should not happen for valid text content,
-					// but provides robustness. More importantly, it ensures the full string is captured.
-					let text = text_value.as_str().map_or_else(
-						|| {
-							tracing::warn!("GeminiAdapter: 'text' part was not a string, converting to debug string. Value: {:?}", text_value);
-							text_value.to_string() // Fallback to debug string representation
-						},
-						|s| s.to_string(),
-					);
-					if is_thought {
-						gemini_contents.push(GeminiChatContent::Thought(text));
-					} else {
-						content_parts.push(ContentPart::Text(text));
-					}
-				} else if let Ok(mut inline_data_json) = part_json.x_take::<Value>("inlineData") {
-					let mime_type = inline_data_json.x_take::<String>("mimeType")?;
-					let data = inline_data_json.x_take::<String>("data")?;
-					content_parts.push(ContentPart::Image {
-						content_type: mime_type,
-						source: MediaSource::Base64(data.into()),
-					});
-					has_image_content = true;
-				} else if let Ok(mut file_data_json) = part_json.x_take::<Value>("fileData") {
-					let mime_type = file_data_json.x_take::<String>("mimeType")?;
-					let file_uri = file_data_json.x_take::<String>("fileUri")?;
-					// Determine if it's an image or document based on mime_type or context.
-					// For simplicity, assuming PDF for now, but could be extended.
-					if mime_type.starts_with("image/") {
-						content_parts.push(ContentPart::Image {
-							content_type: mime_type,
-							source: MediaSource::Url(file_uri),
-						});
-						has_image_content = true;
-					} else if mime_type.starts_with("application/pdf") {
-						content_parts.push(ContentPart::Document {
-							content_type: mime_type,
-							source: MediaSource::Url(file_uri),
-						});
-					} else {
-						// Handle other file types if necessary, or return an error
-						tracing::warn!("Unsupported fileData mime_type: {}", mime_type);
-					}
-				}
+		for mut part in parts {
+			// -- Capture eventual function call
+			if let Ok(fn_call_value) = part.x_take::<Value>("functionCall") {
+				let tool_call = ToolCall {
+					// NOTE: Gemini does not have call_id so, use name
+					call_id: fn_call_value.x_get("name").unwrap_or("".to_string()), // TODO: Handle this, gemini does not return the call_id
+					fn_name: fn_call_value.x_get("name").unwrap_or("".to_string()),
+					fn_arguments: fn_call_value.x_get("args").unwrap_or(Value::Null),
+				};
+				content.push(GeminiChatContent::ToolCall(tool_call))
 			}
 
-			if !content_parts.is_empty() {
-				// If response_modalities requested an image but none was found in this candidate's parts
-				if options_set
-					.response_modalities()
-					.is_some_and(|m| m.contains(&"IMAGE".to_string()))
-					&& !has_image_content
-				{
-					// Add a warning part, as per user preference
-					content_parts.push(ContentPart::Text(
-						"[WARN] Image was requested but not generated for this candidate.".to_string(),
-					));
-				}
-				gemini_contents.push(GeminiChatContent::Parts(content_parts));
-			} else if !gemini_contents.iter().any(|gc| matches!(gc, GeminiChatContent::ToolCall(_))) {
-				// If no parts were processed and it wasn't a tool call, it might be an error or empty response for this candidate
-				println!(
-					"Warning: Candidate resulted in no processable content (text, image, or tool_call): {candidate_json:?}"
-				);
+			// -- Capture eventual text
+			if let Some(txt_content) = part
+				.x_take::<Value>("text")
+				.ok()
+				.and_then(|v| if let Value::String(v) = v { Some(v) } else { None })
+				.map(GeminiChatContent::Text)
+			{
+				content.push(txt_content)
 			}
 		}
-
-		// Usage is typically overall for the request, not per candidate.
 		let usage = body.x_take::<Value>("usageMetadata").map(Self::into_usage).unwrap_or_default();
 
-		Ok(GeminiChatResponse {
-			contents: gemini_contents,
-			usage,
-		})
+		Ok(GeminiChatResponse { content, usage })
 	}
 
-	/// See gemini doc: <https://ai.google.dev/api/generate-content#UsageMetadata>
+	/// See gemini doc: https://ai.google.dev/api/generate-content#UsageMetadata
 	pub(super) fn into_usage(mut usage_value: Value) -> Usage {
 		let total_tokens: Option<i32> = usage_value.x_take("totalTokenCount").ok();
 
@@ -570,13 +390,15 @@ impl GeminiAdapter {
 		}
 	}
 
-	/// Takes the genai `ChatMessages` and builds the System string and JSON Messages for Gemini.
+	/// Takes the genai ChatMessages and builds the System string and JSON Messages for Gemini.
 	/// - Role mapping `ChatRole:User -> role: "user"`, `ChatRole::Assistant -> role: "model"`
 	/// - `ChatRole::System` is concatenated (with an empty line) into a single `system` for the system instruction.
 	///   - This adapter uses version v1beta, which supports `systemInstruction`
 	/// - The eventual `chat_req.system` is pushed first into the "systemInstruction"
-	#[allow(clippy::too_many_lines)]
-	fn into_gemini_request_parts(model_iden: ModelIden, chat_req: ChatRequest) -> Result<GeminiChatRequestParts> {
+	fn into_gemini_request_parts(
+		model_iden: &ModelIden, // use for error reporting
+		chat_req: ChatRequest,
+	) -> Result<GeminiChatRequestParts> {
 		let mut contents: Vec<Value> = Vec::new();
 		let mut systems: Vec<String> = Vec::new();
 
@@ -589,177 +411,155 @@ impl GeminiAdapter {
 			match msg.role {
 				// For now, system goes as "user" (later, we might have adapter_config.system_to_user_impl)
 				ChatRole::System => {
-					let MessageContent::Text(content) = msg.content else {
-						return Err(Error::MessageContentTypeNotSupported {
-							model_iden,
-							cause: "Only MessageContent::Text supported for this model (for now)",
-						});
-					};
-					systems.push(content);
+					if let Some(content) = msg.content.into_joined_texts() {
+						systems.push(content);
+					}
 				}
 				ChatRole::User => {
-					let content = match msg.content {
-						MessageContent::Text(content) => json!([{"text": content}]),
-						MessageContent::Parts(parts) => {
-							json!(
-								parts
-									.iter()
-									.map(|part| match part {
-										ContentPart::Text(text) => json!({"text": text.clone()}),
-										ContentPart::Image { content_type, source }
-										| ContentPart::Document { content_type, source } => {
-											match source {
-												MediaSource::Url(url) => json!({
-													"file_data": {
-														"mime_type": content_type,
-														"file_uri": url
-													}
-												}),
-												MediaSource::Base64(content) => json!({
-													"inline_data": {
-														"mime_type": content_type,
-														"data": content
-													}
-												}),
-											}
+					let mut parts_values: Vec<Value> = Vec::new();
+					for part in msg.content {
+						match part {
+							ContentPart::Text(text) => parts_values.push(json!({"text": text})),
+							ContentPart::Binary(binary) => {
+								let Binary {
+									content_type, source, ..
+								} = binary;
+								match &source {
+									BinarySource::Url(url) => parts_values.push(json!({
+										"file_data": {
+											"mime_type": content_type,
+											"file_uri": url
 										}
-									})
-									.collect::<Vec<Value>>()
-							)
+									})),
+									BinarySource::Base64(content) => parts_values.push(json!({
+										"inline_data": {
+											"mime_type": content_type,
+											"data": content
+										}
+									})),
+								}
+							}
+							ContentPart::ToolCall(tool_call) => {
+								parts_values.push(json!({
+									"functionCall": {
+										"name": tool_call.fn_name,
+										"args": tool_call.fn_arguments,
+									}
+								}));
+							}
+							ContentPart::ToolResponse(tool_response) => {
+								parts_values.push(json!({
+									"functionResponse": {
+										"name": tool_response.call_id,
+										"response": {
+											"name": tool_response.call_id,
+											"content": tool_response.content,
+										}
+									}
+								}));
+							}
 						}
-						MessageContent::ToolCalls(tool_calls) => {
-							json!(
-								tool_calls
-									.into_iter()
-									.map(|tool_call| {
-										json!({
-											"functionCall": {
-												"name": tool_call.fn_name,
-												"args": tool_call.fn_arguments,
-											}
-										})
-									})
-									.collect::<Vec<Value>>()
-							)
-						}
-						MessageContent::ToolResponses(tool_responses) => {
-							json!(
-								tool_responses
-									.into_iter()
-									.map(|tool_response| {
-										json!({
-											"functionResponse": {
-												"name": tool_response.call_id,
-												"response": {
-													"name": tool_response.call_id,
-													"content": serde_json::from_str(&tool_response.content).unwrap_or(Value::Null),
-												}
-											}
-										})
-									})
-									.collect::<Vec<Value>>()
-							)
-						}
-					};
+					}
 
-					contents.push(json!({"role": "user", "parts": content}));
+					contents.push(json!({"role": "user", "parts": parts_values}));
 				}
 				ChatRole::Assistant => {
-					match msg.content {
-						MessageContent::Text(content) => {
-							contents.push(json!({"role": "model", "parts": [{"text": content}]}));
+					let mut parts_values: Vec<Value> = Vec::new();
+					for part in msg.content {
+						match part {
+							ContentPart::Text(text) => parts_values.push(json!({"text": text})),
+							ContentPart::ToolCall(tool_call) => {
+								parts_values.push(json!({
+									"functionCall": {
+										"name": tool_call.fn_name,
+										"args": tool_call.fn_arguments,
+									}
+								}));
+							}
+							// Ignore unsupported parts for Assistant role
+							ContentPart::Binary(_) => {}
+							ContentPart::ToolResponse(_) => {}
 						}
-						MessageContent::ToolCalls(tool_calls) => contents.push(json!({
-							"role": "model",
-							"parts": tool_calls
-								.into_iter()
-								.map(|tool_call| {
-									json!({
-										"functionCall": {
-											"name": tool_call.fn_name,
-											"args": tool_call.fn_arguments,
-										}
-									})
-								})
-								.collect::<Vec<Value>>()
-						})),
-						_ => {
-							return Err(Error::MessageContentTypeNotSupported {
-								model_iden,
-								cause: "Only MessageContent::Text and MessageContent::ToolCalls supported for this model (for now)",
-							});
-						}
-					};
+					}
+					if !parts_values.is_empty() {
+						contents.push(json!({"role": "model", "parts": parts_values}));
+					}
 				}
 				ChatRole::Tool => {
-					let content = match msg.content {
-						MessageContent::ToolCalls(tool_calls) => {
-							json!(
-								tool_calls
-									.into_iter()
-									.map(|tool_call| {
-										json!({
-											"functionCall": {
-												"name": tool_call.fn_name,
-												"args": tool_call.fn_arguments,
-											}
-										})
-									})
-									.collect::<Vec<Value>>()
-							)
+					let mut parts_values: Vec<Value> = Vec::new();
+					for part in msg.content {
+						match part {
+							ContentPart::ToolCall(tool_call) => {
+								parts_values.push(json!({
+									"functionCall": {
+										"name": tool_call.fn_name,
+										"args": tool_call.fn_arguments,
+									}
+								}));
+							}
+							ContentPart::ToolResponse(tool_response) => {
+								parts_values.push(json!({
+									"functionResponse": {
+										"name": tool_response.call_id,
+										"response": {
+											"name": tool_response.call_id,
+											"content": tool_response.content,
+										}
+									}
+								}));
+							}
+							_ => {
+								return Err(Error::MessageContentTypeNotSupported {
+									model_iden: model_iden.clone(),
+									cause: "ChatRole::Tool can only contain ToolCall or ToolResponse content parts",
+								});
+							}
 						}
-						MessageContent::ToolResponses(tool_responses) => {
-							json!(
-								tool_responses
-									.into_iter()
-									.map(|tool_response| {
-										json!({
-											"functionResponse": {
-												"name": tool_response.call_id,
-												"response": {
-													"name": tool_response.call_id,
-													"content": serde_json::from_str(&tool_response.content).unwrap_or(Value::Null),
-												}
-											}
-										})
-									})
-									.collect::<Vec<Value>>()
-							)
-						}
-						_ => {
-							return Err(Error::MessageContentTypeNotSupported {
-								model_iden,
-								cause: "ChatRole::Tool can only be MessageContent::ToolCall or MessageContent::ToolResponse",
-							});
-						}
-					};
+					}
 
-					contents.push(json!({"role": "user", "parts": content}));
+					contents.push(json!({"role": "user", "parts": parts_values}));
 				}
 			}
 		}
 
-		let system = if systems.is_empty() {
-			None
-		} else {
+		let system = if !systems.is_empty() {
 			Some(systems.join("\n"))
+		} else {
+			None
 		};
 
-		let tools = chat_req.tools.map(|tools| {
-			tools
-				.into_iter()
-				.map(|tool| {
-					// TODO: Need to handle the error correctly
-					// TODO: Needs to have a custom serializer (tool should not have to match to a provider)
-					// NOTE: Right now, low probability, so, we just return null if cannot convert to value.
-					json!({
-						"name": tool.name,
-						"description": tool.description,
-						"parameters": tool.schema,
+		// -- Build tools
+		let tools = if let Some(req_tools) = chat_req.tools {
+			let mut tools: Vec<Value> = Vec::new();
+			// Note: This is to add only one function_declarations in the tools as per the gemini spec
+			//       The rest are builtins
+			let mut function_declarations: Vec<Value> = Vec::new();
+			for req_tool in req_tools {
+				// -- if it is a builtin tool
+				if matches!(
+					req_tool.name.as_str(),
+					"googleSearch" | "googleSearchRetrieval" | "codeExecution" | "urlContext"
+				) {
+					tools.push(json!({req_tool.name: req_tool.config}));
+				}
+				// -- otherwise, user tool
+				else {
+					function_declarations.push(json! {
+						{
+							"name": req_tool.name,
+							"description": req_tool.description,
+							"parameters": req_tool.schema,
+						}
 					})
-				})
-				.collect::<Vec<Value>>()
-		});
+				}
+			}
+			if !function_declarations.is_empty() {
+				tools.push(json!({"function_declarations": function_declarations}));
+			}
+			Some(tools)
+		} else {
+			None
+		};
 
 		Ok(GeminiChatRequestParts {
 			system,
@@ -767,322 +567,19 @@ impl GeminiAdapter {
 			tools,
 		})
 	}
-
-	// -- Imagen 3 Specific Methods --
-	pub fn to_imagen_generation_request_data(
-		target: ServiceTarget,
-		request: ImagenGenerateImagesRequest,
-	) -> Result<WebRequestData> {
-		let ServiceTarget { endpoint, auth, model } = target;
-		let api_key = get_api_key(&auth, &model)?;
-		let url = Self::get_service_url(&model, ServiceType::ImageGenerationImagen, endpoint);
-		let url = format!("{url}?key={api_key}");
-
-		// Construct the payload for Imagen 3
-		// The request struct `ImagenGenerateImagesRequest` is already designed
-		// to serialize into the format Imagen expects for the "instances" part.
-		// We need to wrap it in an "instances" array and add "parameters".
-		let mut parameters = json!({});
-		if let Some(count) = request.number_of_images {
-			parameters.x_insert("sampleCount", count)?;
-		}
-		if let Some(ratio) = &request.aspect_ratio {
-			parameters.x_insert("aspectRatio", ratio)?;
-		}
-		if let Some(pg) = &request.person_generation {
-			parameters.x_insert("personGeneration", pg)?;
-		}
-		if let Some(seed) = request.seed {
-			parameters.x_insert("seed", seed)?;
-		}
-		// Negative prompt is part of the main request struct for Imagen, not parameters.
-
-		let instance_payload = serde_json::to_value(request)?;
-
-		let payload = json!({
-			"instances": [instance_payload],
-			"parameters": parameters,
-		});
-
-		let headers = vec![("Content-Type".to_string(), "application/json".to_string())];
-
-		Ok(WebRequestData { url, headers, payload })
-	}
-
-	pub fn to_imagen_generation_response(
-		model_iden: ModelIden,
-		mut web_response: WebResponse,
-	) -> Result<ImagenGenerateImagesResponse> {
-		let provider_model_name: Option<String> = None; // Imagen predict API might not return this in the same way
-		let provider_model_iden = model_iden.from_optional_name(provider_model_name);
-
-		// The Imagen response has a `predictions` array.
-		// Each item in `predictions` should match `ImagenGeneratedImage` structure.
-		// {
-		//   "predictions": [
-		//     {
-		//       "bytesBase64Encoded": "...",
-		//       "seed": 12345,
-		//       "finishReason": "DONE"
-		//     }
-		//   ]
-		// }
-		let generated_images = web_response
-			.body
-			.x_take::<Vec<crate::chat::ImagenGeneratedImage>>("predictions")?;
-
-		Ok(ImagenGenerateImagesResponse {
-			generated_images,
-			usage: None, // Imagen API might not provide usage data in the same way as chat
-			model_iden,
-			provider_model_iden,
-		})
-	}
-
-	// -- Veo Specific Methods --
-	pub fn to_veo_generation_request_data(
-		target: ServiceTarget,
-		request: VeoGenerateVideosRequest,
-	) -> Result<WebRequestData> {
-		let ServiceTarget { endpoint, auth, model } = target;
-		let api_key = get_api_key(&auth, &model)?;
-		let url = Self::get_service_url(&model, ServiceType::VideoGenerationVeo, endpoint);
-		let url = format!("{url}?key={api_key}");
-
-		let mut instance_content = json!({});
-		if let Some(prompt) = request.prompt {
-			instance_content.x_insert("prompt", prompt)?;
-		}
-		if let Some(image_input) = request.image {
-			// Serialize VeoImageInput and insert it under "image"
-			let image_payload = serde_json::to_value(image_input)?;
-			instance_content.x_insert("image", image_payload)?;
-		}
-
-		let mut parameters = json!({});
-		if let Some(ratio) = &request.aspect_ratio {
-			parameters.x_insert("aspectRatio", ratio)?;
-		}
-		if let Some(pg) = &request.person_generation {
-			parameters.x_insert("personGeneration", pg)?;
-		}
-		if let Some(count) = request.number_of_videos {
-			parameters.x_insert("sampleCount", count)?;
-		}
-		if let Some(duration) = request.duration_seconds {
-			parameters.x_insert("durationSeconds", duration)?;
-		}
-		if let Some(enhance) = request.enhance_prompt {
-			parameters.x_insert("enhancePrompt", enhance)?;
-		}
-		if let Some(neg_prompt) = request.negative_prompt {
-			parameters.x_insert("negativePrompt", neg_prompt)?;
-		}
-
-		let payload = json!({
-			"instances": [instance_content],
-			"parameters": parameters,
-		});
-
-		let headers = vec![("Content-Type".to_string(), "application/json".to_string())];
-
-		let mut redacted_payload = payload.clone();
-		if let Some(instances) = redacted_payload["instances"].as_array_mut() {
-			for instance in instances {
-				// Redact bytes if it exists under image in the instance
-				if let Some(image_obj) = instance.get_mut("image") {
-					if let Some(image_map) = image_obj.as_object_mut() {
-						if image_map.contains_key("bytes") {
-							image_map.insert("bytes".to_string(), Value::String("<redacted>".to_string()));
-						}
-					}
-				}
-			}
-		}
-
-		tracing::trace!(
-			target: "genai_gemini_adapter",
-			"Veo Generation Request Payload: {}",
-			serde_json::to_string_pretty(&redacted_payload).unwrap_or_else(|e| format!("Failed to serialize payload: {e}"))
-		);
-
-		Ok(WebRequestData { url, headers, payload })
-	}
-
-	pub fn to_veo_generation_response(
-		model_iden: ModelIden,
-		mut web_response: WebResponse,
-	) -> Result<VeoGenerateVideosResponse> {
-		let provider_model_name: Option<String> = None; // Veo predict API might not return this in the same way
-		let provider_model_iden = model_iden.from_optional_name(provider_model_name);
-
-		// The initial response for Veo is a long-running operation name.
-		// { "name": "operations/..." }
-		let operation_name = web_response.body.x_take::<String>("name")?;
-
-		Ok(VeoGenerateVideosResponse {
-			operation_name,
-			model_iden,
-			provider_model_iden,
-		})
-	}
-
-	pub fn get_veo_operation_status_request_data(
-		target: ServiceTarget,
-		operation_name: &str,
-	) -> Result<WebRequestData> {
-		let ServiceTarget { endpoint, auth, model } = target;
-		let api_key = get_api_key(&auth, &model)?;
-
-		// The URL for polling an operation is different: BASE_URL/operations/{operation_name}?key={API_KEY}
-		let base_url = endpoint.base_url();
-		let url = format!("{base_url}{operation_name}?key={api_key}");
-
-		let headers = vec![]; // No specific headers needed for GET
-		let payload = json!({}); // No payload for GET
-
-		tracing::trace!(
-			target: "genai_gemini_adapter",
-			"Veo Get Operation Status Request URL: {}, Payload: {}",
-			url,
-			serde_json::to_string_pretty(&payload).unwrap_or_else(|e| format!("Failed to serialize payload: {e}"))
-		);
-
-		Ok(WebRequestData { url, headers, payload })
-	}
-
-	pub fn to_veo_operation_status_response(
-		model_iden: ModelIden,
-		mut web_response: WebResponse,
-	) -> Result<VeoOperationStatusResponse> {
-		tracing::trace!(
-			target: "genai_gemini_adapter",
-			"Veo Operation Status Polling Response Body: {}",
-			serde_json::to_string_pretty(&web_response.body).unwrap_or_else(|e| format!("Failed to serialize body: {e}"))
-		);
-		let provider_model_name: Option<String> = None;
-		let provider_model_iden = model_iden.from_optional_name(provider_model_name);
-
-		// Check for a top-level error object first. If present, it's an API error response.
-		if let Ok(error_value) = web_response.body.x_take::<Value>("error") {
-			return Err(Error::WebModelCall {
-				model_iden,
-				webc_error: crate::webc::Error::ResponseFailedStatus {
-					status: reqwest::StatusCode::BAD_REQUEST, // Use appropriate StatusCode
-					body: error_value.to_string(),
-				},
-			});
-		}
-
-		// If no top-level error, proceed to parse the expected operation status fields.
-		// We need to clone the body if we want to log it fully in case of multiple parsing errors,
-		// as x_take consumes parts of it. For now, log what's available at point of error.
-		// Try to parse 'done'. If not found, assume false. If other parsing error, return Err.
-		let actual_done = match web_response.body.x_take::<bool>("done") {
-			Ok(d_val) => d_val,
-			Err(ref e) if matches!(e, value_ext::JsonValueExtError::PropertyNotFound(_)) => {
-				// Log that 'done' was not found and we're defaulting to false.
-				// The body state here will be *after* attempting to take 'done'.
-				eprintln!(
-					"GeminiAdapter::to_veo_operation_status_response - 'done' field not found in polling response, assuming not completed. Body after attempt to take 'done': {:?}. Original error: {}",
-					web_response.body, e
-				);
-				false // Assume not done if the field is missing
-			}
-			Err(e) => {
-				// For any other error (e.g., WrongType), it's a genuine parsing problem.
-				eprintln!(
-					"GeminiAdapter::to_veo_operation_status_response - Error parsing 'done' field (not PropertyNotFound). Body after attempt to take 'done': {:?}. Error: {}",
-					web_response.body, e
-				);
-				return Err(Error::from(e));
-			}
-		};
-
-		// 'name' should always be present in operation status responses.
-		let name = web_response.body.x_take::<String>("name").map_err(|e| {
-			eprintln!(
-				"GeminiAdapter::to_veo_operation_status_response - Error parsing 'name' field. Current body state (after 'done' processing): {:?}. Error: {}",
-				web_response.body, e
-			);
-			Error::from(e)
-		})?;
-
-		// This 'error' field is part of the operation object itself, distinct from the top-level 'error'
-		// checked at the beginning of this function. It indicates an error with the async operation.
-		let operation_error_value = web_response.body.x_take::<Value>("error").ok();
-
-		let response_result = if actual_done {
-			if operation_error_value.is_some() {
-				// If the operation is done and there's an error field, no successful response is expected.
-				None
-			} else {
-				// If done and no operation_error_value, try to parse the successful response.
-				match web_response.body.x_take::<VeoOperationResult>("response") {
-					Ok(res) => Some(res),
-					Err(e) => {
-						// This case means done=true, no operation_error_value, but 'response' field is missing or malformed.
-						eprintln!(
-							"GeminiAdapter::to_veo_operation_status_response - Error parsing 'response' field when done=true and no operation error. Current body state: {:?}. Error: {:?}",
-							web_response.body, e
-						);
-						// Propagate the error instead of returning None for the response.
-						return Err(Error::from(e));
-					}
-				}
-			}
-		} else {
-			// Not done yet.
-			None
-		};
-
-		Ok(VeoOperationStatusResponse {
-			done: actual_done,
-			name,
-			response: response_result,
-			error: operation_error_value, // This is the error from the operation object
-			model_iden,
-			provider_model_iden,
-		})
-	}
 }
 
 // struct Gemini
 
+/// FIXME: need to be Vec<GeminiChatContent>
 pub(super) struct GeminiChatResponse {
-	pub contents: Vec<GeminiChatContent>,
+	pub content: Vec<GeminiChatContent>,
 	pub usage: Usage,
 }
 
 pub(super) enum GeminiChatContent {
-	Parts(Vec<ContentPart>),
+	Text(String),
 	ToolCall(ToolCall),
-	Thought(String),
-	// Note: A simple Text variant might be redundant if Parts can contain a single Text part.
-	// However, keeping it might simplify some direct text-only response scenarios if they exist.
-	// For now, focusing on Parts for flexibility with multi-modal and ToolCall.
-}
-
-impl From<GeminiChatContent> for MessageContent {
-	fn from(gemini_content: GeminiChatContent) -> Self {
-		match gemini_content {
-			GeminiChatContent::Parts(parts) => {
-				// For backward compatibility, if we have a single text part, convert to Text
-				if parts.len() == 1 {
-					match &parts[0] {
-						ContentPart::Text(text) => Self::Text(text.clone()),
-						ContentPart::Image { .. } | ContentPart::Document { .. } => Self::Parts(parts),
-					}
-				} else {
-					Self::Parts(parts)
-				}
-			}
-			GeminiChatContent::ToolCall(tool_call) => Self::ToolCalls(vec![tool_call]),
-			GeminiChatContent::Thought(_) => {
-				unreachable!("GeminiChatContent::Thought should not be converted to MessageContent directly")
-			}
-		}
-	}
 }
 
 struct GeminiChatRequestParts {

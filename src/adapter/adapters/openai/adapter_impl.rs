@@ -1,19 +1,22 @@
-use super::streamer::OpenAIStreamer;
 use crate::adapter::adapters::support::get_api_key;
+use crate::adapter::openai::OpenAIStreamer;
+use crate::adapter::openai::ToWebRequestCustom;
 use crate::adapter::{Adapter, AdapterDispatcher, AdapterKind, ServiceType, WebRequestData};
+use crate::chat::Binary;
 use crate::chat::{
-	ChatOptionsSet, ChatRequest, ChatResponse, ChatResponseFormat, ChatRole, ChatStream, ChatStreamResponse,
-	ContentPart, MediaSource, MessageContent, ReasoningEffort, ToolCall, Usage,
+	BinarySource, ChatOptionsSet, ChatRequest, ChatResponse, ChatResponseFormat, ChatRole, ChatStream,
+	ChatStreamResponse, ContentPart, MessageContent, ReasoningEffort, ToolCall, Usage,
 };
 use crate::resolver::{AuthData, Endpoint};
 use crate::webc::WebResponse;
-use crate::{Error, Result};
+use crate::{Error, Headers, Result};
 use crate::{ModelIden, ServiceTarget};
 use reqwest::RequestBuilder;
 use reqwest_eventsource::EventSource;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tracing::error;
+use tracing::warn;
 use value_ext::JsonValueExt;
 
 pub struct OpenAIAdapter;
@@ -21,13 +24,9 @@ pub struct OpenAIAdapter;
 // Latest models
 const MODELS: &[&str] = &[
 	//
-	"gpt-4.1",
-	"gpt-4.1-mini",
-	"gpt-4.1-nano",
-	"o4-mini",
-	"gpt-4o",
-	"gpt-4o-mini",
-	"o3-mini",
+	"gpt-5",
+	"gpt-5-mini",
+	"gpt-5-nano",
 ];
 
 impl OpenAIAdapter {
@@ -46,11 +45,11 @@ impl Adapter for OpenAIAdapter {
 
 	/// Note: Currently returns the common models (see above)
 	async fn all_model_names(_kind: AdapterKind) -> Result<Vec<String>> {
-		Ok(MODELS.iter().map(ToString::to_string).collect())
+		Ok(MODELS.iter().map(|s| s.to_string()).collect())
 	}
 
-	fn get_service_url(model: &ModelIden, service_type: ServiceType, endpoint: Endpoint) -> String {
-		Self::util_get_service_url(model, service_type, &endpoint)
+	fn get_service_url(model: &ModelIden, service_type: ServiceType, endpoint: Endpoint) -> Result<String> {
+		Self::util_get_service_url(model, service_type, endpoint)
 	}
 
 	fn to_web_request_data(
@@ -59,7 +58,7 @@ impl Adapter for OpenAIAdapter {
 		chat_req: ChatRequest,
 		chat_options: ChatOptionsSet<'_, '_>,
 	) -> Result<WebRequestData> {
-		Self::util_to_web_request_data(target, service_type, chat_req, &chat_options)
+		OpenAIAdapter::util_to_web_request_data(target, service_type, chat_req, chat_options, None)
 	}
 
 	fn to_chat_response(
@@ -69,6 +68,8 @@ impl Adapter for OpenAIAdapter {
 	) -> Result<ChatResponse> {
 		let WebResponse { mut body, .. } = web_response;
 
+		let captured_raw_body = options_set.capture_raw_body().unwrap_or_default().then(|| body.clone());
+
 		// -- Capture the provider_model_iden
 		let provider_model_name: Option<String> = body.x_remove("model").ok();
 		let provider_model_iden = model_iden.from_optional_name(provider_model_name);
@@ -76,48 +77,65 @@ impl Adapter for OpenAIAdapter {
 		// -- Capture the usage
 		let usage = body
 			.x_take("usage")
-			.map(|value| Self::into_usage(model_iden.adapter_kind, value))
+			.map(|value| OpenAIAdapter::into_usage(model_iden.adapter_kind, value))
 			.unwrap_or_default();
 
 		// -- Capture the content
-		let (content, reasoning_content) = if let Some(mut first_choice) = body.x_take::<Option<Value>>("/choices/0")? {
-			match first_choice.x_take::<Option<String>>("/message/content")? {
-				Some(mut content) if !content.is_empty() => {
-					// "Standard" attempt to get the reasoning_content
-					let mut reasoning_content = first_choice
+		let mut content: MessageContent = MessageContent::default();
+		let mut reasoning_content: Option<String> = None;
+
+		if let Ok(Some(mut first_choice)) = body.x_take::<Option<Value>>("/choices/0") {
+			// Check if reasoning is present
+			// Can be in two places:
+			// - /message/reasoning
+			// - /message/reasoning_content
+			// Extracted before content as some model can return reasoning without content
+			reasoning_content = first_choice
+				.x_take::<Option<String>>("/message/reasoning")
+				.ok()
+				.unwrap_or_else(|| {
+					first_choice
 						.x_take::<Option<String>>("/message/reasoning_content")
 						.ok()
-						.flatten();
+						.flatten()
+				})
+				.map(|s| s.trim().to_string());
 
-					// If not reasoning_content, but
-					if reasoning_content.is_none() && options_set.normalize_reasoning_content().unwrap_or_default() {
-						(content, reasoning_content) = extract_think(content);
-					}
-
-					let content = MessageContent::from(content);
-
-					(Some(content), reasoning_content)
+			// -- Push eventual text message
+			if let Ok(Some(mut text_content)) = first_choice.x_take::<Option<String>>("/message/content") {
+				text_content = text_content.trim().to_string();
+				// If not reasoning_content, but
+				if reasoning_content.is_none() && options_set.normalize_reasoning_content().unwrap_or_default() {
+					let (content_tmp, reasoning_content_tmp) = extract_think(text_content);
+					reasoning_content = reasoning_content_tmp;
+					text_content = content_tmp;
 				}
-				_ => {
-					let content = first_choice
-						.x_take("/message/tool_calls")
-						.ok()
-						.map(parse_tool_calls)
-						.transpose()?
-						.map(MessageContent::from_tool_calls);
-					(content, None)
+
+				// After extracting reasoning_content, sometimes the content is empty.
+				if !text_content.is_empty() {
+					content.push(text_content);
 				}
 			}
-		} else {
-			(None, None)
-		};
+
+			// -- Push eventual ToolCalls
+			if let Some(tool_calls) = first_choice
+				.x_take("/message/tool_calls")
+				.ok()
+				.map(parse_tool_calls)
+				.transpose()?
+				.map(MessageContent::from_tool_calls)
+			{
+				content.extend(tool_calls);
+			}
+		}
 
 		Ok(ChatResponse {
-			contents: content.map_or_else(Vec::new, |c| vec![c]),
+			content,
 			reasoning_content,
 			model_iden,
 			provider_model_iden,
 			usage,
+			captured_raw_body,
 		})
 	}
 
@@ -127,7 +145,7 @@ impl Adapter for OpenAIAdapter {
 		options_sets: ChatOptionsSet<'_, '_>,
 	) -> Result<ChatStreamResponse> {
 		let event_source = EventSource::new(reqwest_builder)?;
-		let openai_stream = OpenAIStreamer::new(event_source, model_iden.clone(), &options_sets);
+		let openai_stream = OpenAIStreamer::new(event_source, model_iden.clone(), options_sets);
 		let chat_stream = ChatStream::from_inter_stream(openai_stream);
 
 		Ok(ChatStreamResponse {
@@ -135,47 +153,76 @@ impl Adapter for OpenAIAdapter {
 			stream: chat_stream,
 		})
 	}
+
+	fn to_embed_request_data(
+		service_target: ServiceTarget,
+		embed_req: crate::embed::EmbedRequest,
+		options_set: crate::embed::EmbedOptionsSet<'_, '_>,
+	) -> Result<WebRequestData> {
+		super::embed::to_embed_request_data(service_target, embed_req, options_set)
+	}
+
+	fn to_embed_response(
+		model_iden: ModelIden,
+		web_response: WebResponse,
+		options_set: crate::embed::EmbedOptionsSet<'_, '_>,
+	) -> Result<crate::embed::EmbedResponse> {
+		super::embed::to_embed_response(model_iden, web_response, options_set)
+	}
 }
 
-/// Support functions for other adapters that share `OpenAI` APIs
+/// Support functions for other adapters that share OpenAI APIs
 impl OpenAIAdapter {
 	pub(in crate::adapter::adapters) fn util_get_service_url(
 		_model: &ModelIden,
 		service_type: ServiceType,
 		// -- utility arguments
-		default_endpoint: &Endpoint,
-	) -> String {
+		default_endpoint: Endpoint,
+	) -> Result<String> {
 		let base_url = default_endpoint.base_url();
-		match service_type {
-			ServiceType::Chat | ServiceType::ChatStream => format!("{base_url}chat/completions"),
-			ServiceType::ImageGenerationImagen | ServiceType::VideoGenerationVeo => {
-				// For now, other service types are not supported by OpenAI
-				panic!("ServiceType {service_type:?} not supported for OpenAIAdapter");
-			}
-		}
+		// Parse into URL and query-params
+		let base_url = reqwest::Url::parse(base_url)
+			.map_err(|err| Error::Internal(format!("Cannot parse url: {base_url}. Cause:\n{err}")))?;
+		let original_query_params = base_url.query().to_owned();
+
+		let suffix = match service_type {
+			ServiceType::Chat | ServiceType::ChatStream => "chat/completions",
+			ServiceType::Embed => "embeddings",
+		};
+		let mut full_url = base_url.join(suffix).map_err(|err| {
+			Error::Internal(format!(
+				"Cannot joing suffix '{suffix}' for url: {base_url}. Cause:\n{err}"
+			))
+		})?;
+		full_url.set_query(original_query_params);
+		Ok(full_url.to_string())
 	}
 
+	/// Shared OpenAI to_web_request_data for various OpenAI compatible adapters
 	pub(in crate::adapter::adapters) fn util_to_web_request_data(
 		target: ServiceTarget,
 		service_type: ServiceType,
 		chat_req: ChatRequest,
-		options_set: &ChatOptionsSet<'_, '_>,
+		options_set: ChatOptionsSet<'_, '_>,
+		custom: Option<ToWebRequestCustom>,
 	) -> Result<WebRequestData> {
 		let ServiceTarget { model, auth, endpoint } = target;
-		let model_name = &model.model_name;
+		let (model_name, _) = model.model_name.as_model_name_and_namespace();
 		let adapter_kind = model.adapter_kind;
 
 		// -- api_key
-		let api_key = get_api_key(&auth, &model)?;
+		let api_key = get_api_key(auth, &model)?;
 
 		// -- url
-		let url = AdapterDispatcher::get_service_url(&model, service_type, endpoint);
+		let url = AdapterDispatcher::get_service_url(&model, service_type, endpoint)?;
 
 		// -- headers
-		let headers = vec![
-			// headers
-			("Authorization".to_string(), format!("Bearer {api_key}")),
-		];
+		let mut headers = Headers::from(("Authorization".to_string(), format!("Bearer {api_key}")));
+
+		// -- extra headers
+		if let Some(extra_headers) = options_set.extra_headers() {
+			headers.merge_with(extra_headers);
+		}
 
 		let stream = matches!(service_type, ServiceType::ChatStream);
 
@@ -183,19 +230,20 @@ impl OpenAIAdapter {
 		// For now, just for openai AdapterKind
 		let (reasoning_effort, model_name): (Option<ReasoningEffort>, &str) =
 			if matches!(adapter_kind, AdapterKind::OpenAI) {
-				let (reasoning_effort, model_name) = options_set.reasoning_effort().cloned().map_or_else(
-					|| ReasoningEffort::from_model_name(model_name),
-					|v| (Some(v), model_name.as_ref()),
-				);
+				let (reasoning_effort, model_name) = options_set
+					.reasoning_effort()
+					.cloned()
+					.map(|v| (Some(v), model_name))
+					.unwrap_or_else(|| ReasoningEffort::from_model_name(model_name));
 
 				(reasoning_effort, model_name)
 			} else {
-				(None, model_name.as_ref())
+				(None, model_name)
 			};
 
 		// -- Build the basic payload
 
-		let OpenAIRequestParts { messages, tools } = Self::into_openai_request_parts(&model, chat_req);
+		let OpenAIRequestParts { messages, tools } = Self::into_openai_request_parts(&model, chat_req)?;
 		let mut payload = json!({
 			"model": model_name,
 			"messages": messages,
@@ -203,10 +251,17 @@ impl OpenAIAdapter {
 		});
 
 		// -- Set reasoning effort
-		if let Some(reasoning_effort) = reasoning_effort {
-			if let Some(keyword) = reasoning_effort.as_keyword() {
-				payload.x_insert("reasoning_effort", keyword)?;
-			}
+		if let Some(reasoning_effort) = reasoning_effort
+			&& let Some(keyword) = reasoning_effort.as_keyword()
+		{
+			payload.x_insert("reasoning_effort", keyword)?;
+		}
+
+		// -- Set verbosity
+		if let Some(verbosity) = options_set.verbosity()
+			&& let Some(keyword) = verbosity.as_keyword()
+		{
+			payload.x_insert("verbosity", keyword)?;
 		}
 
 		// -- Tools
@@ -215,9 +270,9 @@ impl OpenAIAdapter {
 		}
 
 		// -- Add options
-		let response_format = options_set.response_format().map(|response_format| {
+		let response_format = if let Some(response_format) = options_set.response_format() {
 			match response_format {
-				ChatResponseFormat::JsonMode => json!({"type": "json_object"}),
+				ChatResponseFormat::JsonMode => Some(json!({"type": "json_object"})),
 				ChatResponseFormat::JsonSpec(st_json) => {
 					// "type": "json_schema", "json_schema": {...}
 
@@ -232,7 +287,7 @@ impl OpenAIAdapter {
 						true
 					});
 
-					json!({
+					Some(json!({
 						"type": "json_schema",
 						"json_schema": {
 							"name": st_json.name.clone(),
@@ -240,18 +295,12 @@ impl OpenAIAdapter {
 							// TODO: add description
 							"schema": schema,
 						}
-					})
-				}
-				ChatResponseFormat::EnumSpec(_) => {
-					tracing::warn!("OpenAIAdapter: ChatResponseFormat::EnumSpec is not directly supported. Consider using JsonSpec with a schema for constrained JSON output.");
-					json!({"type": "json_object"}) // Fallback to json_object
-				}
-				ChatResponseFormat::JsonSchemaSpec(_) => {
-					tracing::warn!("OpenAIAdapter: ChatResponseFormat::JsonSchemaSpec is not directly supported. Consider using JsonSpec with a schema for constrained JSON output.");
-					json!({"type": "json_object"}) // Fallback to json_object
+					}))
 				}
 			}
-		});
+		} else {
+			None
+		};
 
 		if let Some(response_format) = response_format {
 			payload["response_format"] = response_format;
@@ -272,19 +321,31 @@ impl OpenAIAdapter {
 
 		if let Some(max_tokens) = options_set.max_tokens() {
 			payload.x_insert("max_tokens", max_tokens)?;
+		} else if let Some(custom) = custom.as_ref()
+			&& let Some(max_tokens) = custom.default_max_tokens
+		{
+			payload.x_insert("max_tokens", max_tokens)?;
 		}
 		if let Some(top_p) = options_set.top_p() {
 			payload.x_insert("top_p", top_p)?;
+		}
+		if let Some(seed) = options_set.seed() {
+			payload.x_insert("seed", seed)?;
+		}
+		if let Some(service_tier) = options_set.service_tier()
+			&& let Some(keyword) = service_tier.as_keyword()
+		{
+			payload.x_insert("service_tier", keyword)?;
 		}
 
 		Ok(WebRequestData { url, headers, payload })
 	}
 
-	/// Note: Needs to be called from `super::streamer` as well
+	/// Note: Needs to be called from super::streamer as well
 	pub(super) fn into_usage(adapter: AdapterKind, usage_value: Value) -> Usage {
 		// NOTE: here we make sure we do not fail since we do not want to break a response because usage parsing fail
 		let usage = serde_json::from_value(usage_value).map_err(|err| {
-			error!("Fail to deserilaize uage. Cause: {err}");
+			error!("Fail to deserialize usage. Cause: {err}");
 			err
 		});
 		let mut usage: Usage = usage.unwrap_or_default();
@@ -297,20 +358,20 @@ impl OpenAIAdapter {
 		// TODO: We might want to do this for other token details as well.
 		// TODO: We could check if the math adds up first with the total token count, and only change it if it does not.
 		//       This will allow us to be forward compatible if/when they fix this bug (yes, it is a bug).
-		if matches!(adapter, AdapterKind::Xai) {
-			if let Some(reasoning_tokens) = usage.completion_tokens_details.as_ref().and_then(|d| d.reasoning_tokens) {
-				let completion_tokens = usage.completion_tokens.unwrap_or(0);
-				usage.completion_tokens = Some(completion_tokens + reasoning_tokens);
-			}
+		if matches!(adapter, AdapterKind::Xai)
+			&& let Some(reasoning_tokens) = usage.completion_tokens_details.as_ref().and_then(|d| d.reasoning_tokens)
+		{
+			let completion_tokens = usage.completion_tokens.unwrap_or(0);
+			usage.completion_tokens = Some(completion_tokens + reasoning_tokens)
 		}
 
 		usage
 	}
 
-	/// Takes the genai `ChatMessages` and builds the `OpenAIChatRequestParts`
+	/// Takes the genai ChatMessages and builds the OpenAIChatRequestParts
 	/// - `genai::ChatRequest.system`, if present, is added as the first message with role 'system'.
 	/// - All messages get added with the corresponding roles (tools are not supported for now)
-	fn into_openai_request_parts(_model_iden: &ModelIden, chat_req: ChatRequest) -> OpenAIRequestParts {
+	fn into_openai_request_parts(_model_iden: &ModelIden, chat_req: ChatRequest) -> Result<OpenAIRequestParts> {
 		let mut messages: Vec<Value> = Vec::new();
 
 		// -- Process the system
@@ -324,89 +385,124 @@ impl OpenAIAdapter {
 			match msg.role {
 				// For now, system and tool messages go to the system
 				ChatRole::System => {
-					if let MessageContent::Text(content) = msg.content {
-						messages.push(json!({"role": "system", "content": content}));
+					if let Some(content) = msg.content.into_joined_texts() {
+						messages.push(json!({"role": "system", "content": content}))
 					}
 					// TODO: Probably need to warn if it is a ToolCalls type of content
 				}
+
+				// User - For now support Text and Binary
 				ChatRole::User => {
-					let content = match msg.content {
-						MessageContent::Text(content) => json!(content),
-						MessageContent::Parts(parts) => {
-							json!(
-								parts
-									.iter()
-									.map(|part| match part {
-										ContentPart::Text(text) => json!({"type": "text", "text": text.clone()}),
-										ContentPart::Image { content_type, source } => {
-											match source {
-												MediaSource::Url(url) => {
-													json!({"type": "image_url", "image_url": {"url": url}})
-												}
-												MediaSource::Base64(content) => {
-													let image_url = format!("data:{content_type};base64,{content}");
-													json!({"type": "image_url", "image_url": {"url": image_url}})
-												}
+					// -- If we have only text, then, we jjust returned the joined_texts
+					if msg.content.is_text_only() {
+						// NOTE: for now, if no content, just return empty string (respect current logic)
+						let content = json!(msg.content.joined_texts().unwrap_or_else(String::new));
+						messages.push(json! ({"role": "user", "content": content}));
+					} else {
+						let mut values: Vec<Value> = Vec::new();
+						for part in msg.content {
+							match part {
+								ContentPart::Text(content) => values.push(json!({"type": "text", "text": content})),
+								ContentPart::Binary(binary) => {
+									let is_image = binary.is_image();
+									let Binary {
+										content_type, source, ..
+									} = binary;
+
+									if is_image {
+										match &source {
+											BinarySource::Url(url) => {
+												values.push(json!({"type": "image_url", "image_url": {"url": url}}))
+											}
+											BinarySource::Base64(content) => {
+												let image_url = format!("data:{};base64,{}", content_type, content);
+												values
+													.push(json!({"type": "image_url", "image_url": {"url": image_url}}))
 											}
 										}
-										ContentPart::Document { content_type, source } => {
-											// OpenAI treats documents similar to images
-											match source {
-												MediaSource::Url(url) => {
-													json!({"type": "image_url", "image_url": {"url": url}})
-												}
-												MediaSource::Base64(content) => {
-													let doc_url = format!("data:{content_type};base64,{content}");
-													json!({"type": "image_url", "image_url": {"url": doc_url}})
-												}
+									} else {
+										match &source {
+											BinarySource::Url(_url) => {
+												// TODO: Need to return error
+												warn!(
+													"OpenAI doesn't support file from URL, need to handle it gracefully"
+												);
+											}
+											BinarySource::Base64(content) => {
+												let file_data = format!("data:{};base64,{}", content_type, content);
+												values.push(json!({"type": "file", "file": {
+													"filename": binary.name,
+													"file_data": file_data
+												}}))
 											}
 										}
-									})
-									.collect::<Vec<Value>>()
-							)
+
+										// "type": "file",
+										// "file": {
+										//     "filename": "draconomicon.pdf",
+										//     "file_data": f"data:application/pdf;base64,{base64_string}",
+										// }
+									}
+								}
+
+								// Use `match` instead of `if let`. This will allow to future-proof this
+								// implementation in case some new message content types would appear,
+								// this way library would not compile if not all methods are implemented
+								// continue would allow to gracefully skip pushing unserializable message
+								// TODO: Probably need to warn if it is a ToolCalls type of content
+								ContentPart::ToolCall(_) => (),
+								ContentPart::ToolResponse(_) => (),
+							}
 						}
-						// Use `match` instead of `if let`. This will allow to future-proof this
-						// implementation in case some new message content types would appear,
-						// this way library would not compile if not all methods are implemented
-						// continue would allow to gracefully skip pushing unserializable message
-						// TODO: Probably need to warn if it is a ToolCalls type of content
-						MessageContent::ToolCalls(_) | MessageContent::ToolResponses(_) => continue,
-					};
-					messages.push(json! ({"role": "user", "content": content}));
+						messages.push(json! ({"role": "user", "content": values}));
+					}
 				}
 
-				ChatRole::Assistant => match msg.content {
-					MessageContent::Text(content) => messages.push(json! ({"role": "assistant", "content": content})),
-					MessageContent::ToolCalls(tool_calls) => {
-						let tool_calls = tool_calls
-							.into_iter()
-							.map(|tool_call| {
-								json!({
+				// Assistant - For now support Text and ToolCalls
+				ChatRole::Assistant => {
+					// -- If we have only text, then, we jjust returned the joined_texts
+					let mut texts: Vec<String> = Vec::new();
+					let mut tool_calls: Vec<Value> = Vec::new();
+					for part in msg.content {
+						match part {
+							ContentPart::Text(text) => texts.push(text),
+							ContentPart::ToolCall(tool_call) => {
+								//
+								tool_calls.push(json!({
 									"type": "function",
 									"id": tool_call.call_id,
 									"function": {
 										"name": tool_call.fn_name,
 										"arguments": tool_call.fn_arguments.to_string(),
 									}
-								})
-							})
-							.collect::<Vec<Value>>();
-						messages.push(json! ({"role": "assistant", "tool_calls": tool_calls}));
-					}
-					// TODO: Probably need to trace/warn that this will be ignored
-					MessageContent::Parts(_) | MessageContent::ToolResponses(_) => (),
-				},
+								}))
+							}
 
+							// TODO: Probably need towarn on this one (probably need to add binary here)
+							ContentPart::Binary(_) => (),
+							ContentPart::ToolResponse(_) => (),
+						}
+					}
+					let content = texts.join("\n\n");
+					let mut message = json!({"role": "assistant", "content": content});
+					if !tool_calls.is_empty() {
+						message.x_insert("tool_calls", tool_calls)?;
+					}
+					messages.push(message);
+				}
+
+				// Tool - For now, support only tool responses
 				ChatRole::Tool => {
-					if let MessageContent::ToolResponses(tool_responses) = msg.content {
-						for tool_response in tool_responses {
+					for part in msg.content {
+						if let ContentPart::ToolResponse(tool_response) = part {
 							messages.push(json!({
 								"role": "tool",
 								"content": tool_response.content,
 								"tool_call_id": tool_response.call_id,
-							}));
+							}))
 						}
 					}
+
 					// TODO: Probably need to trace/warn that this will be ignored
 				}
 			}
@@ -435,7 +531,7 @@ impl OpenAIAdapter {
 				.collect::<Vec<Value>>()
 		});
 
-		OpenAIRequestParts { messages, tools }
+		Ok(OpenAIRequestParts { messages, tools })
 	}
 }
 
@@ -445,26 +541,26 @@ fn extract_think(content: String) -> (String, Option<String>) {
 	let start_tag = "<think>";
 	let end_tag = "</think>";
 
-	if let Some(start) = content.find(start_tag) {
-		if let Some(end) = content[start + start_tag.len()..].find(end_tag) {
-			let start_pos = start;
-			let end_pos = start + start_tag.len() + end;
+	if let Some(start) = content.find(start_tag)
+		&& let Some(end) = content[start + start_tag.len()..].find(end_tag)
+	{
+		let start_pos = start;
+		let end_pos = start + start_tag.len() + end;
 
-			let think_content = &content[start_pos + start_tag.len()..end_pos];
-			let think_content = think_content.trim();
+		let think_content = &content[start_pos + start_tag.len()..end_pos];
+		let think_content = think_content.trim();
 
-			// Extract parts of the original content without cloning until necessary
-			let before_think = &content[..start_pos];
-			let after_think = &content[end_pos + end_tag.len()..];
+		// Extract parts of the original content without cloning until necessary
+		let before_think = &content[..start_pos];
+		let after_think = &content[end_pos + end_tag.len()..];
 
-			// Remove a leading newline in `after_think` if it starts with '\n'
-			let after_think = after_think.trim_start();
+		// Remove a leading newline in `after_think` if it starts with '\n'
+		let after_think = after_think.trim_start();
 
-			// Construct the final cleaned content in one allocation
-			let cleaned_content = format!("{before_think}{after_think}");
+		// Construct the final cleaned content in one allocation
+		let cleaned_content = format!("{before_think}{after_think}");
 
-			return (cleaned_content, Some(think_content.to_string()));
-		}
+		return (cleaned_content, Some(think_content.to_string()));
 	}
 
 	(content, None)
@@ -476,6 +572,11 @@ struct OpenAIRequestParts {
 }
 
 fn parse_tool_calls(raw_tool_calls: Value) -> Result<Vec<ToolCall>> {
+	// Some backends (like sglang) return null if no tool calls are present.
+	if raw_tool_calls.is_null() {
+		return Ok(vec![]);
+	}
+
 	let Value::Array(raw_tool_calls) = raw_tool_calls else {
 		return Err(Error::InvalidJsonResponseElement {
 			info: "tool calls is not an array",

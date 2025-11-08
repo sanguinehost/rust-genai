@@ -33,6 +33,95 @@
 
 Forked from [jeremychone/rust-genai](https://github.com/jeremychone/rust-genai)
 
+## 2025-10-25 - [v0.4.3](https://github.com/jeremychone/rust-genai/compare/v0.4.2...v0.4.3)
+
+- `!` Refactor ZHIPU adapter to ZAI with namespace-based endpoint routing (#95)
+- `-` openai - stream tool - Fix streaming too issue (#91)
+- `.` added ModelName partial eq implementations for string types (#94)
+- `.` anthropic - update model name for haiku 4.5
+
+## 2025-10-12 - [v0.4.2](https://github.com/jeremychone/rust-genai/compare/v0.4.1...v0.4.2)
+
+- `.` test - make the common_test_chat_stop_sequences_ok more resilient
+- `^` Anthropic - preserve the content order as it appears in the JSON array (#89)
+- `.` Gemini - when no response, return error with finishReason and usageMetadata
+
+## 2025-09-30 - [v0.4.1](https://github.com/jeremychone/rust-genai/compare/v0.4.0...v0.4.1)
+
+- `^` anthropic - add reasoning support
+
+## 2025-09-28 - [v0.4.0](https://github.com/jeremychone/rust-genai/compare/v0.3.5...v0.4.0)
+
+Some **API Changes** - See [migration-v_0_3_to_0_4](doc/migration/migration-v_0_3_to_0_4.md)
+
+- `+` openai - gpt-5-codex - Add support for gpt-5-codex via Responses OpenAIResp adapter 
+- `!` StreamEnd - now have conent: Option<MessageContent> (but same public api)
+- `!` ChatResponse - now .content: MessageContent (rather than Vec<MessageContent>). Same public interface.
+- `^` chat_stream - Relax Unpin bound in from_inter_stream
+- `^` chat/content_part - trim() in MIME checks, add into_binary(), and struct spacing; update work plan/history
+- `!` ChatRequest::append/with_...(vec) functions  now take iterators
+- `-` ChatRequests::combine_systems - keeping one empty line in between
+- `-` ChatOptions - fix minimal reasoning effort (was matching to low)
+- `+` openai - add verbosity parameter
+- `!` ContentPart - from/new binary now have name last (since optional)
+- `!` ContentPart - Now use ContentPart::Binary(Binary)
+- `!` MessageContent - New structure (flatten multi-part)
+- `.` gemini - update gemini-2.5-flash-lite model name
+- `^` openai - add support for the -minimal suffix
+- `.` test - openai - add gpt-5-mini when possible
+- `.` openai - exclude the 'gpt-oss..' model to allow ollama fallback
+- `>` test - refactoring to TestResult for better test error display
+- `!` API CHAINGE - Now ContentPart::Binary
+- `+` Added support for PDF (and file in general) for openai, anthropic, and gemini
+- `^` fireworks - set the default max_tokens to 256k (won't fail if model lower)
+- `.` openai streamer - check that tool_calls is not null to enter tool_calls (for together streaming)
+- `.` openai streamer - add teogether for capture usage
+- `*` openai streamer - make the content extraction more resilient (do not error or cannot x_take)
+- `+` adapter - add together.ai adapter
+- `+` adapter - add fireworks adapter
+- `+` Add embeddings support (#83)
+- `*` note about AuthData::RequestOverride being only for exec_chat_stream
+- `.` c06-target-resolver - update model
+- `!` Headers - change the API to set / override headers
+- `.` groq - add models
+- `-` gemini - fix -zero,low,... suffix issue
+- `^` Anthropic - Add support for tool calls and thinking in the Anthropic streamer. (#80)
+- `*` Add support for tool calls and thinking in the anthropic streamer.
+- `.` ModelName / ... - add Hash, Eq, PartialEq
+- `+` ChatOptions - Add extra headers to requests (#78)
+- `+` Implement zhipu (ChatGLM) completions  (#76)
+- `+` feat: add new model names to ZhipuAdapter (#77)
+- `.` webc::error ResponseFailedStatus now takes headers: Box HeaderMap
+- `-` fix: handle null tool calls in OpenAIRequestParts parser (#74)
+- `-` fix: push empty content for sglang impl
+- `-` fix: OpenAIAdapter to avoid pushing empty content after reasoning extraction (#72)
+- `-` Fix OpenAIAdapter to avoid pushing empty content after reasoning extraction
+- `-` trim strings too
+- `!` MessageContent - Now use text() and into_text() (from text_as_str, text_into_string)
+- `>` refactor capture_raw_body (from #68) - move it to ChatOptions to be able to override it by chat request
+- `-` feat: support optionally capture raw response body (#68)
+- `-` Extend OpenAI adapter to preserve request params (#71)
+- `+` feat: support embeded tools like gemini's google search (#67)
+- `-` fix: improve reasoning content extraction in OpenAIAdapter (#69)
+- `-` Updated the reasoning content extraction logic to handle cases where reasoning may be present in multiple locations within the response. Enhanced error handling for the extraction process to ensure robustness.
+- `-` feat: add web configuration support (#66)
+- `-` Introduced web_config.rs for web-specific configurations, and updated related modules to integrate web configuration capabilities into the client builder.
+- `-` gemini - fix streaming multi-content
+- `!` api change - StreamEnd - Now text and tool calls content part of Vec
+- `^` Anthropic - add support for ChatResponse multi content (not the stream yet)
+- `^` openai - add support for ChatResponse multi content (not the stream yet)
+- `!` API CHANGE - ChatResponse.tool_calls now return Vec ToolCall
+- `^` ChatResponse - now implements texts(), into_texts(), first...
+- `!` api change - ChatResponse.content now have content Vec MessageContent
+- `-` gemini - fix wrong tool_response.content json parsing (#59)
+- `-` gemini - fix: fixed partial message parsing in Gemini stream (#63)
+- `.` gemini - now use x-goog-api-key header for auth
+- `.` tests - serial for anthropic
+- `!` nebius - remove the model name match for Adapter selection (needs to use namespace)
+- `+` Model Namespace Support
+- `+` add Nebius adapter (#56)
+- `+` Add Tool Use Streaming Support (#58)
+
 ## 2025-05-26 - [v0.3.5](https://github.com/jeremychone/rust-genai/compare/v0.3.4...v0.3.5)
 
 - `^` OpenAI Adapter - Update OpenAI adapter to check for tool calls if the LLM returns an empty content response ([PR #55](https://github.com/jeremychone/rust-genai/pull/55))

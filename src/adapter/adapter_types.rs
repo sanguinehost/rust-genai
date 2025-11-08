@@ -1,8 +1,9 @@
-use crate::ModelIden;
 use crate::adapter::AdapterKind;
 use crate::chat::{ChatOptionsSet, ChatRequest, ChatResponse, ChatStreamResponse};
+use crate::embed::{EmbedOptionsSet, EmbedRequest, EmbedResponse};
 use crate::resolver::{AuthData, Endpoint};
 use crate::webc::WebResponse;
+use crate::{Headers, ModelIden};
 use crate::{Result, ServiceTarget};
 use reqwest::RequestBuilder;
 use serde_json::Value;
@@ -18,9 +19,9 @@ pub trait Adapter {
 	// NOTE: Adapter is a crate trait, so it is acceptable to use async fn here.
 	async fn all_model_names(kind: AdapterKind) -> Result<Vec<String>>;
 
-	/// The base service URL for this `AdapterKind` for the given service type.
-	/// NOTE: For some services, the URL will be further updated in the `to_web_request_data` method.
-	fn get_service_url(model_iden: &ModelIden, service_type: ServiceType, endpoint: Endpoint) -> String;
+	/// The base service URL for this AdapterKind for the given service type.
+	/// NOTE: For some services, the URL will be further updated in the to_web_request_data method.
+	fn get_service_url(model_iden: &ModelIden, service_type: ServiceType, endpoint: Endpoint) -> Result<String>;
 
 	/// To be implemented by Adapters.
 	fn to_web_request_data(
@@ -44,77 +45,19 @@ pub trait Adapter {
 		options_set: ChatOptionsSet<'_, '_>,
 	) -> Result<ChatStreamResponse>;
 
-	/// To be implemented by Adapters supporting Imagen 3.
-	#[allow(unused_variables, dead_code)]
-	fn to_imagen_generation_request_data(
+	/// To be implemented by Adapters.
+	fn to_embed_request_data(
 		service_target: ServiceTarget,
-		request: crate::chat::ImagenGenerateImagesRequest,
-	) -> Result<WebRequestData> {
-		Err(crate::Error::AdapterFeatureNotSupported {
-			adapter_kind: service_target.model.adapter_kind,
-			feature: "Imagen 3 Image Generation (request data)".to_string(),
-		})
-	}
+		embed_req: EmbedRequest,
+		options_set: EmbedOptionsSet<'_, '_>,
+	) -> Result<WebRequestData>;
 
-	/// To be implemented by Adapters supporting Imagen 3.
-	#[allow(unused_variables, dead_code)]
-	fn to_imagen_generation_response(
+	/// To be implemented by Adapters.
+	fn to_embed_response(
 		model_iden: ModelIden,
 		web_response: WebResponse,
-	) -> Result<crate::chat::ImagenGenerateImagesResponse> {
-		Err(crate::Error::AdapterFeatureNotSupported {
-			adapter_kind: model_iden.adapter_kind,
-			feature: "Imagen 3 Image Generation (response data)".to_string(),
-		})
-	}
-
-	/// To be implemented by Adapters supporting Veo Video Generation.
-	#[allow(unused_variables, dead_code)]
-	fn to_veo_generation_request_data(
-		service_target: ServiceTarget,
-		request: crate::chat::VeoGenerateVideosRequest,
-	) -> Result<WebRequestData> {
-		Err(crate::Error::AdapterFeatureNotSupported {
-			adapter_kind: service_target.model.adapter_kind,
-			feature: "Veo Video Generation (request data)".to_string(),
-		})
-	}
-
-	/// To be implemented by Adapters supporting Veo Video Generation.
-	#[allow(unused_variables, dead_code)]
-	fn to_veo_generation_response(
-		model_iden: ModelIden,
-		web_response: WebResponse,
-	) -> Result<crate::chat::VeoGenerateVideosResponse> {
-		Err(crate::Error::AdapterFeatureNotSupported {
-			adapter_kind: model_iden.adapter_kind,
-			feature: "Veo Video Generation (response data)".to_string(),
-		})
-	}
-
-	/// To be implemented by Adapters supporting Veo Video Generation.
-	#[allow(unused_variables, dead_code)]
-	fn get_veo_operation_status_request_data(
-		service_target: ServiceTarget,
-		operation_name: String,
-	) -> Result<WebRequestData> {
-		Err(crate::Error::AdapterFeatureNotSupported {
-			adapter_kind: service_target.model.adapter_kind,
-			feature: "Veo Video Generation (operation status request data)".to_string(),
-		})
-	}
-
-	/// To be implemented by Adapters supporting Veo Video Generation.
-	#[allow(unused_variables, dead_code)]
-	fn to_veo_operation_status_response(
-		model_iden: ModelIden,
-		web_response: WebResponse,
-	) -> Result<crate::chat::VeoOperationStatusResponse> {
-		Err(crate::Error::AdapterFeatureNotSupported {
-			adapter_kind: model_iden.adapter_kind,
-			feature: "Veo Video Generation (operation status response)".to_string(),
-		})
-	}
+		options_set: EmbedOptionsSet<'_, '_>,
+	) -> Result<EmbedResponse>;
 }
 
 // region:    --- ServiceType
@@ -123,8 +66,7 @@ pub trait Adapter {
 pub enum ServiceType {
 	Chat,
 	ChatStream,
-	ImageGenerationImagen, // For Imagen 3
-	VideoGenerationVeo,    // For Veo
+	Embed,
 }
 
 // endregion: --- ServiceType
@@ -135,7 +77,7 @@ pub enum ServiceType {
 #[derive(Debug, Clone)]
 pub struct WebRequestData {
 	pub url: String,
-	pub headers: Vec<(String, String)>,
+	pub headers: Headers,
 	pub payload: Value,
 }
 

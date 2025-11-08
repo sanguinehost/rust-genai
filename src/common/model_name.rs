@@ -4,12 +4,27 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 /// The model name, which is just an `Arc<str>` wrapper (simple and relatively efficient to clone)
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Hash, Eq, PartialEq)]
 pub struct ModelName(Arc<str>);
 
-impl std::fmt::Display for ModelName {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "{}", self.0)
+/// Utilities
+impl ModelName {
+	/// Calling the `model_name_and_namespace`
+	pub(crate) fn as_model_name_and_namespace(&self) -> (&str, Option<&str>) {
+		Self::model_name_and_namespace(&self.0)
+	}
+
+	/// e.g., `openai::gpt4.1` ("gpt4.1", Some("openai"))
+	///       `gpt4.1` ("gpt4.1", None)
+	pub(crate) fn model_name_and_namespace(model: &str) -> (&str, Option<&str>) {
+		if let Some(ns_idx) = model.find("::") {
+			let ns: &str = &model[..ns_idx];
+			let name: &str = &model[(ns_idx + 2)..];
+			// TODO: assess what to do when name or ns is empty
+			(name, Some(ns))
+		} else {
+			(model, None)
+		}
 	}
 }
 
@@ -53,3 +68,52 @@ impl Deref for ModelName {
 }
 
 // endregion: --- Froms
+
+// region:    --- EQ
+
+// PartialEq implementations for various string types
+impl PartialEq<str> for ModelName {
+	fn eq(&self, other: &str) -> bool {
+		&*self.0 == other
+	}
+}
+
+impl PartialEq<&str> for ModelName {
+	fn eq(&self, other: &&str) -> bool {
+		&*self.0 == *other
+	}
+}
+
+impl PartialEq<String> for ModelName {
+	fn eq(&self, other: &String) -> bool {
+		&*self.0 == other
+	}
+}
+
+// Symmetric implementations (allow "string" == model_name)
+impl PartialEq<ModelName> for str {
+	fn eq(&self, other: &ModelName) -> bool {
+		self == &*other.0
+	}
+}
+
+impl PartialEq<ModelName> for &str {
+	fn eq(&self, other: &ModelName) -> bool {
+		*self == &*other.0
+	}
+}
+
+impl PartialEq<ModelName> for String {
+	fn eq(&self, other: &ModelName) -> bool {
+		self == &*other.0
+	}
+}
+
+// endregion: --- EQ
+
+// TODO: replace with derive_more Display
+impl std::fmt::Display for ModelName {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{}", self.0)
+	}
+}

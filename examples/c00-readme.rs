@@ -3,15 +3,20 @@
 use genai::Client;
 use genai::chat::printer::{PrintChatStreamOptions, print_chat_stream};
 use genai::chat::{ChatMessage, ChatRequest};
+use tracing_subscriber::EnvFilter;
 
 const MODEL_OPENAI: &str = "gpt-4o-mini"; // o1-mini, gpt-4o-mini
 const MODEL_ANTHROPIC: &str = "claude-3-haiku-20240307";
-const MODEL_COHERE: &str = "command-light";
+// or namespaced with simple anme "fireworks::qwen3-30b-a3b", or "fireworks::accounts/fireworks/models/qwen3-30b-a3b"
+const MODEL_FIREWORKS: &str = "accounts/fireworks/models/qwen3-30b-a3b";
+const MODEL_TOGETHER: &str = "together::openai/gpt-oss-20b";
 const MODEL_GEMINI: &str = "gemini-2.0-flash";
-const MODEL_GROQ: &str = "llama3-8b-8192";
+const MODEL_GROQ: &str = "llama-3.1-8b-instant";
 const MODEL_OLLAMA: &str = "gemma:2b"; // sh: `ollama pull gemma:2b`
-const MODEL_XAI: &str = "grok-beta";
+const MODEL_XAI: &str = "grok-3-mini";
 const MODEL_DEEPSEEK: &str = "deepseek-chat";
+const MODEL_ZAI: &str = "glm-4-plus";
+const MODEL_COHERE: &str = "command-r7b-12-2024";
 
 // NOTE: These are the default environment keys for each AI Adapter Type.
 //       They can be customized; see `examples/c02-auth.rs`
@@ -19,12 +24,15 @@ const MODEL_AND_KEY_ENV_NAME_LIST: &[(&str, &str)] = &[
 	// -- De/activate models/providers
 	(MODEL_OPENAI, "OPENAI_API_KEY"),
 	(MODEL_ANTHROPIC, "ANTHROPIC_API_KEY"),
-	(MODEL_COHERE, "COHERE_API_KEY"),
 	(MODEL_GEMINI, "GEMINI_API_KEY"),
+	(MODEL_FIREWORKS, "FIREWORKS_API_KEY"),
+	(MODEL_TOGETHER, "TOGETHER_API_KEY"),
 	(MODEL_GROQ, "GROQ_API_KEY"),
 	(MODEL_XAI, "XAI_API_KEY"),
 	(MODEL_DEEPSEEK, "DEEPSEEK_API_KEY"),
 	(MODEL_OLLAMA, ""),
+	(MODEL_ZAI, "ZAI_API_KEY"),
+	(MODEL_COHERE, "COHERE_API_KEY"),
 ];
 
 // NOTE: Model to AdapterKind (AI Provider) type mapping rule
@@ -33,13 +41,17 @@ const MODEL_AND_KEY_ENV_NAME_LIST: &[(&str, &str)] = &[
 //  - starts_with "command"  -> Cohere
 //  - starts_with "gemini"   -> Gemini
 //  - model in Groq models   -> Groq
+//  - starts_with "glm"      -> ZAI
 //  - For anything else      -> Ollama
 //
 // This can be customized; see `examples/c03-mapper.rs`
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-	tracing_subscriber::fmt().with_max_level(tracing::Level::DEBUG).init();
+	tracing_subscriber::fmt()
+		.with_env_filter(EnvFilter::new("genai=debug"))
+		// .with_max_level(tracing::Level::DEBUG) // To enable all sub-library tracing
+		.init();
 
 	let question = "Why is the sky red?";
 
@@ -67,12 +79,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		println!("\n--- Question:\n{question}");
 
 		println!("\n--- Answer:");
-		let response = client.exec_chat(model, chat_req.clone(), None).await?;
-		println!("{}", response.first_content_text_as_str().unwrap_or("NO ANSWER"));
+		let chat_res = client.exec_chat(model, chat_req.clone(), None).await?;
+		println!("{}", chat_res.first_text().unwrap_or("NO ANSWER"));
 
 		println!("\n--- Answer: (streaming)");
-		let response = client.exec_chat_stream(model, chat_req.clone(), None).await?;
-		print_chat_stream(response, Some(&print_options)).await?;
+		let chat_res = client.exec_chat_stream(model, chat_req.clone(), None).await?;
+		print_chat_stream(chat_res, Some(&print_options)).await?;
 
 		println!();
 	}

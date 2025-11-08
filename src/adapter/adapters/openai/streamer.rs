@@ -2,7 +2,7 @@ use crate::adapter::AdapterKind;
 use crate::adapter::adapters::support::{StreamerCapturedData, StreamerOptions};
 use crate::adapter::inter_stream::{InterStreamEnd, InterStreamEvent};
 use crate::adapter::openai::OpenAIAdapter;
-use crate::chat::ChatOptionsSet;
+use crate::chat::{ChatOptionsSet, ToolCall};
 use crate::{Error, ModelIden, Result};
 use reqwest_eventsource::{Event, EventSource};
 use serde_json::Value;
@@ -15,19 +15,19 @@ pub struct OpenAIStreamer {
 	options: StreamerOptions,
 
 	// -- Set by the poll_next
-	/// Flag to prevent polling the `EventSource` after a `MessageStop` event
+	/// Flag to prevent polling the EventSource after a MessageStop event
 	done: bool,
 	captured_data: StreamerCapturedData,
 }
 
 impl OpenAIStreamer {
 	// TODO: Problem - need the ChatOptions `.capture_content` and `.capture_usage`
-	pub fn new(inner: EventSource, model_iden: ModelIden, options_set: &ChatOptionsSet) -> Self {
+	pub fn new(inner: EventSource, model_iden: ModelIden, options_set: ChatOptionsSet<'_, '_>) -> Self {
 		Self {
 			inner,
 			done: false,
 			options: StreamerOptions::new(model_iden, options_set),
-			captured_data: StreamerCapturedData::default(),
+			captured_data: Default::default(),
 		}
 	}
 }
@@ -58,10 +58,48 @@ impl futures::Stream for OpenAIStreamer {
 							None
 						};
 
+						// -- Process the captured_tool_calls
+						// NOTE: here we attempt to parse the `fn_arguments` if it is string, because it means that it was accumulated
+						let captured_tool_calls = if let Some(tools_calls) = self.captured_data.tool_calls.take() {
+							let tools_calls: Vec<ToolCall> = tools_calls
+								.into_iter()
+								.map(|tool_call| {
+									// extrat
+									let ToolCall {
+										call_id,
+										fn_name,
+										fn_arguments,
+									} = tool_call;
+									// parse fn_arguments if needed
+									let fn_arguments = match fn_arguments {
+										Value::String(fn_arguments_string) => {
+											// NOTE: Here we are resilient for now, if we cannot parse, just return the original String
+											match serde_json::from_str::<Value>(&fn_arguments_string) {
+												Ok(fn_arguments) => fn_arguments,
+												Err(_) => Value::String(fn_arguments_string),
+											}
+										}
+										_ => fn_arguments,
+									};
+
+									ToolCall {
+										call_id,
+										fn_name,
+										fn_arguments,
+									}
+								})
+								.collect();
+							Some(tools_calls)
+						} else {
+							None
+						};
+
+						// Return the internal stream end
 						let inter_stream_end = InterStreamEnd {
-							usage: captured_usage,
-							content: self.captured_data.content.take(),
-							reasoning_content: self.captured_data.reasoning_content.take(),
+							captured_usage,
+							captured_text_content: self.captured_data.content.take(),
+							captured_reasoning_content: self.captured_data.reasoning_content.take(),
+							captured_tool_calls,
 						};
 
 						return Poll::Ready(Some(Ok(InterStreamEvent::End(inter_stream_end))));
@@ -95,14 +133,17 @@ impl futures::Stream for OpenAIStreamer {
 											.x_take("/x_groq/usage")
 											.map(|v| OpenAIAdapter::into_usage(adapter_kind, v))
 											.unwrap_or_default(); // permissive for now
-										self.captured_data.usage = Some(usage);
+										self.captured_data.usage = Some(usage)
 									}
-									AdapterKind::DeepSeek => {
+									AdapterKind::DeepSeek
+									| AdapterKind::Zai
+									| AdapterKind::Fireworks
+									| AdapterKind::Together => {
 										let usage = message_data
 											.x_take("usage")
 											.map(|v| OpenAIAdapter::into_usage(adapter_kind, v))
 											.unwrap_or_default();
-										self.captured_data.usage = Some(usage);
+										self.captured_data.usage = Some(usage)
 									}
 									_ => (), // do nothing, will be captured the OpenAI way
 								}
@@ -110,41 +151,107 @@ impl futures::Stream for OpenAIStreamer {
 
 							continue;
 						}
+						// -- Tool Call
+						else if let Ok(delta_tool_calls) = first_choice.x_take::<Value>("/delta/tool_calls")
+							&& delta_tool_calls != Value::Null
+						{
+							// Check if there's a tool call in the delta
+							if let Some(delta_tool_calls) = delta_tool_calls.as_array()
+								&& !delta_tool_calls.is_empty()
+							{
+								// Extract the first tool call object as a mutable value
+								let mut tool_call_obj = delta_tool_calls[0].clone();
+
+								// Extract tool call data
+								if let (Ok(index), Ok(mut function)) = (
+									tool_call_obj.x_take::<u32>("index"),
+									tool_call_obj.x_take::<Value>("function"),
+								) {
+									let call_id = tool_call_obj
+										.x_take::<String>("id")
+										.unwrap_or_else(|_| format!("call_{index}"));
+									let fn_name = function.x_take::<String>("name").unwrap_or_default();
+									let arguments = function.x_take::<String>("arguments").unwrap_or_default();
+									// Don't parse yet - accumulate as string first
+									let mut tool_call = crate::chat::ToolCall {
+										call_id,
+										fn_name,
+										fn_arguments: serde_json::Value::String(arguments.clone()),
+									};
+
+									// Capture the tool call if enabled
+									if self.options.capture_tool_calls {
+										match &mut self.captured_data.tool_calls {
+											Some(calls) => {
+												self.captured_data.tool_calls = Some({
+													// Accumulate arguments as strings, don't parse until complete
+													let accumulated = if let Some(existing) =
+														calls[index as usize].fn_arguments.as_str()
+													{
+														format!("{}{}", existing, arguments)
+													} else {
+														arguments.clone()
+													};
+
+													// Store as string (will be parsed at stream end)
+													calls[index as usize].fn_arguments =
+														serde_json::Value::String(accumulated);
+
+													// Update call_id and fn_name on first chunk
+													if !tool_call.fn_name.is_empty() {
+														calls[index as usize].call_id = tool_call.call_id.clone();
+														calls[index as usize].fn_name = tool_call.fn_name.clone();
+													}
+
+													tool_call = calls[index as usize].clone();
+													calls.to_vec()
+												})
+											}
+											None => self.captured_data.tool_calls = Some(vec![tool_call.clone()]),
+										}
+									}
+
+									// Return the ToolCallChunk event
+									return Poll::Ready(Some(Ok(InterStreamEvent::ToolCallChunk(tool_call))));
+								}
+							}
+							// No valid tool call found, continue to next message
+							continue;
+						}
 						// -- Content
 						// If there is no finish_reason but there is some content, we can get the delta content and send the Internal Stream Event
-						else if let Some(content) = first_choice.x_take::<Option<String>>("/delta/content")?.as_ref()
-						{
+						else if let Ok(Some(content)) = first_choice.x_take::<Option<String>>("/delta/content") {
 							// Add to the captured_content if chat options allow it
 							if self.options.capture_content {
 								match self.captured_data.content {
-									Some(ref mut c) => c.push_str(content),
-									None => self.captured_data.content = Some(content.to_string()),
+									Some(ref mut c) => c.push_str(&content),
+									None => self.captured_data.content = Some(content.clone()),
 								}
 							}
 
 							// Return the Event
-							return Poll::Ready(Some(Ok(InterStreamEvent::Chunk(content.to_string()))));
+							return Poll::Ready(Some(Ok(InterStreamEvent::Chunk(content))));
 						}
 						// -- Reasoning Content
-						else if let Some(reasoning_content) =
-							first_choice.x_take::<Option<String>>("/delta/reasoning_content")?.as_ref()
+						else if let Ok(Some(reasoning_content)) =
+							first_choice.x_take::<Option<String>>("/delta/reasoning_content")
 						{
 							// Add to the captured_content if chat options allow it
 							if self.options.capture_reasoning_content {
 								match self.captured_data.reasoning_content {
-									Some(ref mut c) => c.push_str(reasoning_content),
-									None => self.captured_data.reasoning_content = Some(reasoning_content.to_string()),
+									Some(ref mut c) => c.push_str(&reasoning_content),
+									None => self.captured_data.reasoning_content = Some(reasoning_content.clone()),
 								}
 							}
 
 							// Return the Event
-							return Poll::Ready(Some(Ok(InterStreamEvent::ReasoningChunk(
-								reasoning_content.to_string(),
-							))));
+							return Poll::Ready(Some(Ok(InterStreamEvent::ReasoningChunk(reasoning_content))));
 						}
 						// If we do not have content, then log a trace message
-						// TODO: use tracing debug
-						tracing::warn!("EMPTY CHOICE CONTENT");
+						else {
+							// TODO: use tracing debug
+							tracing::warn!("EMPTY CHOICE CONTENT");
+						}
 					}
 					// -- Usage message
 					else {

@@ -9,7 +9,13 @@ use reqwest::RequestBuilder;
 
 pub struct GroqAdapter;
 
+// ~ newer on top when/if possible
 pub(in crate::adapter) const MODELS: &[&str] = &[
+	"moonshotai/kimi-k2-instruct",
+	"qwen/qwen3-32b",
+	"mistral-saba-24b",
+	"meta-llama/llama-4-scout-17b-16e-instruct",
+	"meta-llama/llama-4-maverick-17b-128e-instruct",
 	"llama-3.3-70b-versatile",
 	"llama-3.2-3b-preview",
 	"llama-3.2-1b-preview",
@@ -19,12 +25,12 @@ pub(in crate::adapter) const MODELS: &[&str] = &[
 	"mixtral-8x7b-32768",
 	"gemma2-9b-it",
 	"gemma-7b-it", // deprecated
-	"llama3-8b-8192",
+	"llama-3.1-8b-instant",
 	"llama-guard-3-8b",
 	"llama3-70b-8192",
 	// -- preview
 	"deepseek-r1-distill-llama-70b",
-	"llama-3.3-70b-specdec",
+	"llama-3.3-70b-versatile",
 	"llama-3.2-1b-preview",
 	"llama-3.2-3b-preview",
 	"llama-3.2-11b-vision-preview",
@@ -48,11 +54,11 @@ impl Adapter for GroqAdapter {
 	}
 
 	async fn all_model_names(_kind: AdapterKind) -> Result<Vec<String>> {
-		Ok(MODELS.iter().map(ToString::to_string).collect())
+		Ok(MODELS.iter().map(|s| s.to_string()).collect())
 	}
 
-	fn get_service_url(model: &ModelIden, service_type: ServiceType, endpoint: Endpoint) -> String {
-		OpenAIAdapter::util_get_service_url(model, service_type, &endpoint)
+	fn get_service_url(model: &ModelIden, service_type: ServiceType, endpoint: Endpoint) -> Result<String> {
+		OpenAIAdapter::util_get_service_url(model, service_type, endpoint)
 	}
 
 	fn to_web_request_data(
@@ -61,7 +67,7 @@ impl Adapter for GroqAdapter {
 		chat_req: ChatRequest,
 		chat_options: ChatOptionsSet<'_, '_>,
 	) -> Result<WebRequestData> {
-		OpenAIAdapter::util_to_web_request_data(target, service_type, chat_req, &chat_options)
+		OpenAIAdapter::util_to_web_request_data(target, service_type, chat_req, chat_options, None)
 	}
 
 	fn to_chat_response(
@@ -78,5 +84,27 @@ impl Adapter for GroqAdapter {
 		options_set: ChatOptionsSet<'_, '_>,
 	) -> Result<ChatStreamResponse> {
 		OpenAIAdapter::to_chat_stream(model_iden, reqwest_builder, options_set)
+	}
+
+	fn to_embed_request_data(
+		_service_target: crate::ServiceTarget,
+		_embed_req: crate::embed::EmbedRequest,
+		_options_set: crate::embed::EmbedOptionsSet<'_, '_>,
+	) -> Result<crate::adapter::WebRequestData> {
+		Err(crate::Error::AdapterNotSupported {
+			adapter_kind: crate::adapter::AdapterKind::Groq,
+			feature: "embeddings".to_string(),
+		})
+	}
+
+	fn to_embed_response(
+		_model_iden: crate::ModelIden,
+		_web_response: crate::webc::WebResponse,
+		_options_set: crate::embed::EmbedOptionsSet<'_, '_>,
+	) -> Result<crate::embed::EmbedResponse> {
+		Err(crate::Error::AdapterNotSupported {
+			adapter_kind: crate::adapter::AdapterKind::Groq,
+			feature: "embeddings".to_string(),
+		})
 	}
 }

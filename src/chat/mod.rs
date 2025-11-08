@@ -1,5 +1,5 @@
-//! The genai chat module contains all of the constructs necessary
-//! to make genai requests with the `genai::Client`.
+//! Chat primitives and utilities for building requests and streaming responses.
+//! Intended for use with `genai::Client`
 
 // region:    --- Modules
 
@@ -9,11 +9,10 @@ mod chat_req_response_format;
 mod chat_request;
 mod chat_response;
 mod chat_stream;
-pub mod imagen_types;
+mod content_part;
 mod message_content;
 mod tool;
-mod usage; // Added for Imagen 3 types
-pub mod veo_types;
+mod usage;
 
 // -- Flatten
 pub use chat_message::*;
@@ -22,12 +21,12 @@ pub use chat_req_response_format::*;
 pub use chat_request::*;
 pub use chat_response::*;
 pub use chat_stream::*;
-pub use imagen_types::*;
+pub use content_part::*;
 pub use message_content::*;
 pub use tool::*;
-pub use usage::*; // And re-export them
-pub use veo_types::*;
+pub use usage::*;
 
+#[doc = "Printing helpers for chat requests and streaming output."]
 pub mod printer;
 
 // endregion: --- Modules

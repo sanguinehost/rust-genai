@@ -5,17 +5,21 @@
 use genai::chat::printer::print_chat_stream;
 use genai::chat::{ChatMessage, ChatOptions, ChatRequest};
 use genai::{Client, ClientConfig};
+use tracing_subscriber::EnvFilter;
 
 // const MODEL: &str = "gpt-4o-mini";
 // const MODEL: &str = "command-light";
 // const MODEL: &str = "claude-3-haiku-20240307";
 // const MODEL: &str = "gemini-1.5-flash-latest";
-// const MODEL: &str = "llama3-8b-8192";
+// const MODEL: &str = "llama-3.1-8b-instant";
 const MODEL: &str = "gemma:2b";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-	tracing_subscriber::fmt().with_max_level(tracing::Level::DEBUG).init();
+	tracing_subscriber::fmt()
+		.with_env_filter(EnvFilter::new("genai=debug"))
+		// .with_max_level(tracing::Level::DEBUG) // To enable all sub-library tracing
+		.init();
 
 	let question = "Why is the sky red?";
 

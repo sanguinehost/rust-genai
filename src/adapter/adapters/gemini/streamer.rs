@@ -1,29 +1,32 @@
 use crate::adapter::adapters::support::{StreamerCapturedData, StreamerOptions};
+use crate::adapter::gemini::{GeminiAdapter, GeminiChatResponse};
 use crate::adapter::inter_stream::{InterStreamEnd, InterStreamEvent};
-use crate::chat::ChatOptionsSet;
+use crate::chat::{ChatOptionsSet, ToolCall};
 use crate::webc::WebStream;
 use crate::{Error, ModelIden, Result};
 use serde_json::Value;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use super::GeminiChatContent;
+
 pub struct GeminiStreamer {
 	inner: WebStream,
 	options: StreamerOptions,
 
 	// -- Set by the poll_next
-	/// Flag to not poll the `EventSource` after a `MessageStop` event.
+	/// Flag to not poll the EventSource after a MessageStop event.
 	done: bool,
 	captured_data: StreamerCapturedData,
 }
 
 impl GeminiStreamer {
-	pub fn new(inner: WebStream, model_iden: ModelIden, options_set: &ChatOptionsSet) -> Self {
+	pub fn new(inner: WebStream, model_iden: ModelIden, options_set: ChatOptionsSet<'_, '_>) -> Self {
 		Self {
 			inner,
 			done: false,
 			options: StreamerOptions::new(model_iden, options_set),
-			captured_data: StreamerCapturedData::default(),
+			captured_data: Default::default(),
 		}
 	}
 }
@@ -48,9 +51,10 @@ impl futures::Stream for GeminiStreamer {
 						"[" => InterStreamEvent::Start,
 						"]" => {
 							let inter_stream_end = InterStreamEnd {
-								usage: self.captured_data.usage.take(),
-								content: self.captured_data.content.take(),
-								reasoning_content: self.captured_data.reasoning_content.take(),
+								captured_usage: self.captured_data.usage.take(),
+								captured_text_content: self.captured_data.content.take(),
+								captured_reasoning_content: self.captured_data.reasoning_content.take(),
+								captured_tool_calls: self.captured_data.tool_calls.take(),
 							};
 
 							InterStreamEvent::End(inter_stream_end)
@@ -71,73 +75,66 @@ impl futures::Stream for GeminiStreamer {
 							};
 
 							// -- Extract the Gemini Response
-							let gemini_response = match super::GeminiAdapter::body_to_gemini_chat_response(
-								&self.options.model_iden,
-								json_block,
-								&ChatOptionsSet::default(), // Pass default options_set in streaming
-							) {
-								Ok(gemini_response) => gemini_response,
-								Err(err) => {
-									tracing::error!("Gemini Adapter Stream Error: {}", err);
-									return Poll::Ready(Some(Err(err)));
+							let gemini_response =
+								match GeminiAdapter::body_to_gemini_chat_response(&self.options.model_iden, json_block)
+								{
+									Ok(gemini_response) => gemini_response,
+									Err(err) => {
+										tracing::error!("Gemini Adapter Stream Error: {}", err);
+										return Poll::Ready(Some(Err(err)));
+									}
+								};
+
+							let GeminiChatResponse { content, usage } = gemini_response;
+
+							// -- Extract text and toolcall
+							// WARNING: Assume that only ONE tool call per message (or take the last one)
+							let mut stream_text_content: String = String::new();
+							let mut stream_tool_call: Option<ToolCall> = None;
+							for g_content_item in content {
+								match g_content_item {
+									GeminiChatContent::Text(text) => stream_text_content.push_str(&text),
+									GeminiChatContent::ToolCall(tool_call) => stream_tool_call = Some(tool_call),
 								}
-							};
-
-							let super::GeminiChatResponse { contents, usage } = gemini_response;
-
-							// For streaming with InterStreamEvent::Chunk(String), we process only the text from the first candidate.
-							let first_content = contents.into_iter().next();
-
-							// Capture usage regardless of content type for this chunk, as Gemini sends it cumulatively.
-							if self.options.capture_usage {
-								self.captured_data.usage = Some(usage);
 							}
 
-							match first_content {
-								Some(super::GeminiChatContent::Parts(parts)) => {
-									// Extract text content from parts for streaming
-									let text_content: String = parts
-										.into_iter()
-										.filter_map(|part| match part {
-											crate::chat::ContentPart::Text(text) => Some(text),
-											crate::chat::ContentPart::Image { .. }
-											| crate::chat::ContentPart::Document { .. } => None, // Ignore image and document parts for streaming chunks
-										})
-										.collect();
+							// -- Send Event
+							// WARNING: Assume only text or toolcall (not both on the same event)
+							if !stream_text_content.is_empty() {
+								// Capture content
+								if self.options.capture_content {
+									match self.captured_data.content {
+										Some(ref mut c) => c.push_str(&stream_text_content),
+										None => self.captured_data.content = Some(stream_text_content.clone()),
+									}
+								}
 
-									if text_content.is_empty() {
-										// No text content from the first candidate, usage already updated. Skip emitting an empty chunk.
-										continue; // Go to next item from WebStream
-									}
-									// Capture content text if option is set
-									if self.options.capture_content {
-										match self.captured_data.content {
-											Some(ref mut c) => c.push_str(&text_content),
-											None => self.captured_data.content = Some(text_content.clone()),
-										}
-									}
-									// This is the event to return for this branch of the outer match
-									InterStreamEvent::Chunk(text_content)
+								// NOTE: Apparently in the Gemini API, all events have cumulative usage,
+								//       meaning each message seems to include the tokens for all previous streams.
+								//       Thus, we do not need to add it; we only need to replace captured_data.usage with the latest one.
+								//       See https://twitter.com/jeremychone/status/1813734565967802859 for potential additional information.
+								if self.options.capture_usage {
+									self.captured_data.usage = Some(usage);
 								}
-								Some(super::GeminiChatContent::ToolCall(tool_call)) => {
-									// Emit tool call as a stream event instead of skipping it
-									InterStreamEvent::ToolCall(tool_call)
-								}
-								Some(super::GeminiChatContent::Thought(thought_text)) => {
-									if self.options.capture_reasoning_content {
-										match self.captured_data.reasoning_content {
-											Some(ref mut c) => c.push_str(&thought_text),
-											None => self.captured_data.reasoning_content = Some(thought_text.clone()),
-										}
-									}
-									InterStreamEvent::ReasoningChunk(thought_text)
-								}
-								None => {
-									// No content from the first candidate, usage already updated. Skip emitting an empty chunk.
-									continue; // Go to next item from WebStream
-								}
+
+								InterStreamEvent::Chunk(stream_text_content)
 							}
-						} // End of block_string processing, result is the InterStreamEvent for this iteration
+							// tool call
+							else if let Some(tool_call) = stream_tool_call {
+								if self.options.capture_tool_calls {
+									match self.captured_data.tool_calls {
+										Some(ref mut tool_calls) => tool_calls.push(tool_call.clone()),
+										None => self.captured_data.tool_calls = Some(vec![tool_call.clone()]),
+									}
+								}
+								if self.options.capture_usage {
+									self.captured_data.usage = Some(usage);
+								}
+								InterStreamEvent::ToolCallChunk(tool_call)
+							} else {
+								continue;
+							}
+						}
 					};
 
 					return Poll::Ready(Some(Ok(inter_event)));

@@ -1,4 +1,4 @@
-//! This module contains all the types related to a Chat Response (except `ChatStream`, which has its own file).
+//! Types for chat responses. `ChatStream` is defined separately.
 
 use serde::{Deserialize, Serialize};
 
@@ -7,65 +7,80 @@ use crate::chat::{ChatStream, MessageContent, ToolCall, Usage};
 
 // region:    --- ChatResponse
 
-/// The Chat response when performing a direct `Client::`
+/// Response returned by a non-streaming chat request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatResponse {
-	/// The eventual content(s) of the chat response.
-	/// If `candidateCount` was 1 or not specified, this will contain one item.
-	/// If `candidateCount > 1`, this will contain multiple content items.
-	pub contents: Vec<MessageContent>,
+	/// Message content returned by the assistant.
+	pub content: MessageContent,
 
-	/// The eventual reasoning content,
+	/// Optional reasoning content returned by some models.
 	pub reasoning_content: Option<String>,
 
-	/// The resolved Model Identifier (AdapterKind/ModelName) used for this request.
-	/// > NOTE 1: This might be different from the request model if changed by the ModelMapper
-	/// > NOTE 2: This might also be different than the used_model_iden as this will be the one returned by the AI Provider for this request
+	/// Resolved model identifier (AdapterKind/ModelName).
+	/// > NOTE 1: May differ from the requested model after mapping.
+	/// > NOTE 2: May also differ from `provider_model_iden` (provider-reported name).
 	pub model_iden: ModelIden,
 
-	/// The provider model iden. Will be `model_iden` if not returned or mapped, but can be different.
-	/// For example, `gpt-4o` `model_iden` might have a `provider_model_iden` as `gpt-4o-2024-08-06`
+	/// Provider-reported model identifier.
+	/// May differ from the requested or mapped `model_iden` (e.g., `gpt-4o` reported as `gpt-4o-2024-08-06`).
+	/// Set explicitly by construction code; no implicit defaulting at the type level.
 	pub provider_model_iden: ModelIden,
 
 	// pub model
-	/// The eventual usage of the chat response
+	/// Token usage reported by the provider.
 	pub usage: Usage,
+
+	/// Raw response body for provider-specific features.
+	pub captured_raw_body: Option<serde_json::Value>,
 }
 
 // Getters
 impl ChatResponse {
-	/// Returns the eventual content as `&str` if it is of type `MessageContent::Text`
-	/// from the first candidate. Otherwise, returns None.
-	pub fn first_content_text_as_str(&self) -> Option<&str> {
-		self.contents.first().and_then(MessageContent::text_as_str)
+	/// Returns the first text segment, if any.
+	pub fn first_text(&self) -> Option<&str> {
+		self.content.first_text()
 	}
 
-	/// Consumes the `ChatResponse` and returns the eventual String content of the `MessageContent::Text`
-	/// from the first candidate. Otherwise, returns None.
-	pub fn first_content_text_into_string(mut self) -> Option<String> {
-		self.contents.drain(..).next().and_then(MessageContent::text_into_string)
+	/// Consumes self and returns the first text segment, if any.
+	pub fn into_first_text(self) -> Option<String> {
+		self.content.into_first_text()
 	}
 
-	/// Returns a Vec of `ToolCall` references from the first candidate if its content is `ToolCalls`.
-	/// Otherwise, returns None.
-	#[must_use]
-	pub fn first_tool_calls(&self) -> Option<Vec<&ToolCall>> {
-		if let Some(MessageContent::ToolCalls(tool_calls)) = self.contents.first().as_ref() {
-			Some(tool_calls.iter().collect())
-		} else {
-			None
-		}
+	/// Returns all text segments (first per content item).
+	pub fn texts(&self) -> Vec<&str> {
+		self.content.texts()
 	}
 
-	/// Consumes the `ChatResponse` and returns the `Vec<ToolCall>` from the first candidate
-	/// if its content is `ToolCalls`. Otherwise, returns None.
-	#[must_use]
-	pub fn first_into_tool_calls(mut self) -> Option<Vec<ToolCall>> {
-		if let Some(MessageContent::ToolCalls(tool_calls)) = self.contents.drain(..).next() {
-			Some(tool_calls)
-		} else {
-			None
-		}
+	/// Consumes self and returns all text segments (first per content item).
+	pub fn into_texts(self) -> Vec<String> {
+		self.content.into_texts()
+	}
+
+	/// Returns all captured tool calls.
+	pub fn tool_calls(&self) -> Vec<&ToolCall> {
+		self.content.tool_calls()
+	}
+
+	/// Consumes self and returns all captured tool calls.
+	pub fn into_tool_calls(self) -> Vec<ToolCall> {
+		self.content.into_tool_calls()
+	}
+}
+
+/// Deprecated Getters
+impl ChatResponse {
+	/// Deprecated: use `first_text` or `texts`.
+	/// Returns None if no text is present.
+	#[deprecated(note = "Use '.first_text()' or '.texts()'")]
+	pub fn content_text_as_str(&self) -> Option<&str> {
+		self.first_text()
+	}
+
+	/// Deprecated: use `into_first_text` or `into_texts`.
+	/// Returns None if no text is present.
+	#[deprecated(note = "Use '.into_first_text()' or '.into_texts()")]
+	pub fn content_text_into_string(self) -> Option<String> {
+		self.into_first_text()
 	}
 }
 
@@ -73,12 +88,12 @@ impl ChatResponse {
 
 // region:    --- ChatStreamResponse
 
-/// The result returned from the chat stream.
+/// Result of a streaming chat request.
 pub struct ChatStreamResponse {
-	/// The stream result to iterate through the stream events
+	/// Stream to iterate through response events.
 	pub stream: ChatStream,
 
-	/// The Model Identifier (AdapterKind/ModelName) used for this request.
+	/// Model identifier (AdapterKind/ModelName) used for this request.
 	pub model_iden: ModelIden,
 }
 

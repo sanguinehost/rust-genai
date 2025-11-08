@@ -1,16 +1,23 @@
 use gcp_auth::{CustomServiceAccount, TokenProvider};
+use genai::Client;
+use genai::Headers;
+use genai::ModelIden;
 use genai::chat::printer::print_chat_stream;
 use genai::chat::{ChatMessage, ChatRequest};
 use genai::resolver::{AuthData, AuthResolver};
-use genai::{Client, ModelIden};
-use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use tracing_subscriber::EnvFilter;
 
 const MODEL: &str = "gemini-2.0-flash";
 
 #[tokio::main]
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+	tracing_subscriber::fmt()
+		.with_env_filter(EnvFilter::new("genai=debug"))
+		// .with_max_level(tracing::Level::DEBUG) // To enable all sub-library tracing
+		.init();
+
 	// Just an example of a data that will get captured (needs to be locable)
 	let gcp_env_name: Arc<str> = "GCP_SERVICE_ACCOUNT".into();
 
@@ -30,7 +37,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 				.token(scopes)
 				.await
 				.map_err(|e| genai::resolver::Error::Custom(e.to_string()))?;
-			let location = std::env::var("GCP_LOCATION").unwrap_or_else(|_| "us-central1".to_string());
+			let location = std::env::var("GCP_LOCATION").unwrap_or("us-central1".to_string());
 			let project_id = account.project_id().ok_or_else(|| {
 				genai::resolver::Error::Custom("GCP Auth: Service account has no project_id".to_string())
 			})?;
@@ -38,7 +45,9 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 				"https://{}-aiplatform.googleapis.com/v1/projects/{}/locations/{}/publishers/google/models/{}:generateContent",
 				location, project_id, location, model.model_name
 			);
-			let auth_header = vec![("Authorization".to_string(), format!("Bearer {}", token.as_str()))];
+
+			let auth_value = format!("Bearer {}", token.as_str());
+			let auth_header = Headers::from(("Authorization", auth_value));
 			Ok(Some(AuthData::RequestOverride {
 				headers: auth_header,
 				url,
@@ -57,8 +66,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 	let chat_request = chat_request.append_message(ChatMessage::user("Why is the sky blue?"));
 
 	// -- Executed
-	let stream = client.exec_chat_stream(MODEL, chat_request, None).await.unwrap();
+	let stream = client.exec_chat_stream(MODEL, chat_request, None).await?;
 
-	print_chat_stream(stream, None).await.unwrap();
+	print_chat_stream(stream, None).await?;
 	Ok(())
 }

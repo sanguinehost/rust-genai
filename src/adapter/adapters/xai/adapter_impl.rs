@@ -9,8 +9,7 @@ use reqwest::RequestBuilder;
 
 pub struct XaiAdapter;
 
-pub(in crate::adapter) const MODELS: &[&str] =
-	&["grok-3-beta", "grok-3-fast-beta", "grok-3-mini-beta", "grok-3-mini-fast-beta"];
+pub(in crate::adapter) const MODELS: &[&str] = &["grok-4", "grok-3", "grok-3-fast", "grok-3-mini", "grok-3-mini-fast"];
 
 impl XaiAdapter {
 	pub const API_KEY_DEFAULT_ENV_NAME: &str = "XAI_API_KEY";
@@ -28,11 +27,11 @@ impl Adapter for XaiAdapter {
 	}
 
 	async fn all_model_names(_kind: AdapterKind) -> Result<Vec<String>> {
-		Ok(MODELS.iter().map(ToString::to_string).collect())
+		Ok(MODELS.iter().map(|s| s.to_string()).collect())
 	}
 
-	fn get_service_url(model: &ModelIden, service_type: ServiceType, endpoint: Endpoint) -> String {
-		OpenAIAdapter::util_get_service_url(model, service_type, &endpoint)
+	fn get_service_url(model: &ModelIden, service_type: ServiceType, endpoint: Endpoint) -> Result<String> {
+		OpenAIAdapter::util_get_service_url(model, service_type, endpoint)
 	}
 
 	fn to_web_request_data(
@@ -41,7 +40,7 @@ impl Adapter for XaiAdapter {
 		chat_req: ChatRequest,
 		chat_options: ChatOptionsSet<'_, '_>,
 	) -> Result<WebRequestData> {
-		OpenAIAdapter::util_to_web_request_data(target, service_type, chat_req, &chat_options)
+		OpenAIAdapter::util_to_web_request_data(target, service_type, chat_req, chat_options, None)
 	}
 
 	fn to_chat_response(
@@ -58,5 +57,21 @@ impl Adapter for XaiAdapter {
 		options_set: ChatOptionsSet<'_, '_>,
 	) -> Result<ChatStreamResponse> {
 		OpenAIAdapter::to_chat_stream(model_iden, reqwest_builder, options_set)
+	}
+
+	fn to_embed_request_data(
+		service_target: crate::ServiceTarget,
+		embed_req: crate::embed::EmbedRequest,
+		options_set: crate::embed::EmbedOptionsSet<'_, '_>,
+	) -> Result<crate::adapter::WebRequestData> {
+		OpenAIAdapter::to_embed_request_data(service_target, embed_req, options_set)
+	}
+
+	fn to_embed_response(
+		model_iden: crate::ModelIden,
+		web_response: crate::webc::WebResponse,
+		options_set: crate::embed::EmbedOptionsSet<'_, '_>,
+	) -> Result<crate::embed::EmbedResponse> {
+		OpenAIAdapter::to_embed_response(model_iden, web_response, options_set)
 	}
 }

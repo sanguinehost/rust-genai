@@ -1,9 +1,9 @@
-use super::Result;
-use genai::chat::{ChatMessage, ChatRequest, ContentPart, MediaSource, Tool};
+use super::TestResult;
+use genai::chat::{BinarySource, ChatMessage, ChatRequest, ContentPart, Tool};
 use serde_json::json;
 use simple_fs::{list_files, read_to_string};
 
-pub fn get_big_content() -> Result<String> {
+pub fn get_big_content() -> TestResult<String> {
 	// resolver/... about 13567 (len)
 	// it has to be that to have cache activate
 	let files = list_files("./src", Some(&["./src/resolver/**/*.rs"]), None)?;
@@ -26,12 +26,12 @@ pub fn seed_chat_req_simple() -> ChatRequest {
 	])
 }
 
-pub fn seed_chat_req_tool_simple() -> (Vec<ChatMessage>, Vec<Tool>) {
-	let messages = vec![
+pub fn seed_chat_req_tool_simple() -> ChatRequest {
+	ChatRequest::new(vec![
 		// -- Messages (deactivate to see the differences)
-		ChatMessage::user("What is the temperature in C, in Paris, France"),
-	];
-	let tools = vec![Tool::new("get_weather").with_schema(json!({
+		ChatMessage::user("What is the temperature in C and weather, in Paris, France"),
+	])
+	.append_tool(Tool::new("get_weather").with_schema(json!({
 		"type": "object",
 		"properties": {
 			"city": {
@@ -49,6 +49,5 @@ pub fn seed_chat_req_tool_simple() -> (Vec<ChatMessage>, Vec<Tool>) {
 			}
 		},
 		"required": ["city", "country", "unit"],
-	}))];
-	(messages, tools)
+	})))
 }

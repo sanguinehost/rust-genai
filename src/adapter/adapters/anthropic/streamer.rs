@@ -1,6 +1,6 @@
 use crate::adapter::adapters::support::{StreamerCapturedData, StreamerOptions};
 use crate::adapter::inter_stream::{InterStreamEnd, InterStreamEvent};
-use crate::chat::{ChatOptionsSet, Usage};
+use crate::chat::{ChatOptionsSet, ToolCall, Usage};
 use crate::{Error, ModelIden, Result};
 use reqwest_eventsource::{Event, EventSource};
 use serde_json::Value;
@@ -13,18 +13,27 @@ pub struct AnthropicStreamer {
 	options: StreamerOptions,
 
 	// -- Set by the poll_next
-	/// Flag to prevent polling the `EventSource` after a `MessageStop` event
+	/// Flag to prevent polling the EventSource after a MessageStop event
 	done: bool,
+
 	captured_data: StreamerCapturedData,
+	in_progress_block: InProgressBlock,
+}
+
+enum InProgressBlock {
+	Text,
+	ToolUse { id: String, name: String, input: String },
+	Thinking,
 }
 
 impl AnthropicStreamer {
-	pub fn new(inner: EventSource, model_iden: ModelIden, options_set: &ChatOptionsSet) -> Self {
+	pub fn new(inner: EventSource, model_iden: ModelIden, options_set: ChatOptionsSet<'_, '_>) -> Self {
 		Self {
 			inner,
 			done: false,
 			options: StreamerOptions::new(model_iden, options_set),
-			captured_data: StreamerCapturedData::default(),
+			captured_data: Default::default(),
+			in_progress_block: InProgressBlock::Text,
 		}
 	}
 }
@@ -45,11 +54,39 @@ impl futures::Stream for AnthropicStreamer {
 					let message_type = message.event.as_str();
 
 					match message_type {
-						"message_start" | "message_delta" => {
+						"message_start" => {
 							self.capture_usage(message_type, &message.data)?;
 							continue;
 						}
-						"content_block_start" | "content_block_stop" => {
+						"message_delta" => {
+							self.capture_usage(message_type, &message.data)?;
+							continue;
+						}
+						"content_block_start" => {
+							let mut data: Value =
+								serde_json::from_str(&message.data).map_err(|serde_error| Error::StreamParse {
+									model_iden: self.options.model_iden.clone(),
+									serde_error,
+								})?;
+
+							match data.x_get_str("/content_block/type") {
+								Ok("text") => self.in_progress_block = InProgressBlock::Text,
+								Ok("thinking") => self.in_progress_block = InProgressBlock::Thinking,
+								Ok("tool_use") => {
+									self.in_progress_block = InProgressBlock::ToolUse {
+										id: data.x_take("/content_block/id")?,
+										name: data.x_take("/content_block/name")?,
+										input: String::new(),
+									};
+								}
+								Ok(txt) => {
+									tracing::warn!("unhandled content type: {txt}");
+								}
+								Err(e) => {
+									tracing::error!("{e:?}");
+								}
+							}
+
 							continue;
 						}
 						"content_block_delta" => {
@@ -58,17 +95,65 @@ impl futures::Stream for AnthropicStreamer {
 									model_iden: self.options.model_iden.clone(),
 									serde_error,
 								})?;
-							let content: String = data.x_take("/delta/text")?;
 
-							// Add to the captured_content if chat options say so
-							if self.options.capture_content {
-								match self.captured_data.content {
-									Some(ref mut c) => c.push_str(&content),
-									None => self.captured_data.content = Some(content.to_string()),
+							match &mut self.in_progress_block {
+								InProgressBlock::Text => {
+									let content: String = data.x_take("/delta/text")?;
+
+									// Add to the captured_content if chat options say so
+									if self.options.capture_content {
+										match self.captured_data.content {
+											Some(ref mut c) => c.push_str(&content),
+											None => self.captured_data.content = Some(content.clone()),
+										}
+									}
+
+									return Poll::Ready(Some(Ok(InterStreamEvent::Chunk(content))));
+								}
+								InProgressBlock::ToolUse { input, .. } => {
+									input.push_str(data.x_get_str("/delta/partial_json")?);
+									continue;
+								}
+								InProgressBlock::Thinking => {
+									let thinking: String = data.x_take("/delta/thinking")?;
+
+									// Add to the captured_thinking if chat options say so
+									if self.options.capture_reasoning_content {
+										match self.captured_data.reasoning_content {
+											Some(ref mut r) => r.push_str(&thinking),
+											None => self.captured_data.reasoning_content = Some(thinking.clone()),
+										}
+									}
+
+									return Poll::Ready(Some(Ok(InterStreamEvent::ReasoningChunk(thinking))));
+								}
+							}
+						}
+						"content_block_stop" => {
+							match std::mem::replace(&mut self.in_progress_block, InProgressBlock::Text) {
+								InProgressBlock::ToolUse { id, name, input } => {
+									let tc = ToolCall {
+										call_id: id,
+										fn_name: name,
+										fn_arguments: serde_json::from_str(&input)?,
+									};
+
+									// Add to the captured_tool_calls if chat options say so
+									if self.options.capture_tool_calls {
+										match self.captured_data.tool_calls {
+											Some(ref mut t) => t.push(tc.clone()),
+											None => self.captured_data.tool_calls = Some(vec![tc.clone()]),
+										}
+									}
+
+									return Poll::Ready(Some(Ok(InterStreamEvent::ToolCallChunk(tc))));
+								}
+								_ => {
+									// no-op for remaining block types
 								}
 							}
 
-							return Poll::Ready(Some(Ok(InterStreamEvent::Chunk(content))));
+							continue;
 						}
 						// -- END MESSAGE
 						"message_stop" => {
@@ -93,9 +178,10 @@ impl futures::Stream for AnthropicStreamer {
 							};
 
 							let inter_stream_end = InterStreamEnd {
-								usage: captured_usage,
-								content: self.captured_data.content.take(),
-								reasoning_content: self.captured_data.reasoning_content.take(),
+								captured_usage,
+								captured_text_content: self.captured_data.content.take(),
+								captured_reasoning_content: self.captured_data.reasoning_content.take(),
+								captured_tool_calls: self.captured_data.tool_calls.take(),
 							};
 
 							// TODO: Need to capture the data as needed
@@ -162,7 +248,7 @@ impl AnthropicStreamer {
 		Ok(())
 	}
 
-	/// Simple wrapper for now, with the corresponding `map_err`.
+	/// Simple wrapper for now, with the corresponding map_err.
 	/// Might have more logic later.
 	fn parse_message_data(&self, payload: &str) -> Result<Value> {
 		serde_json::from_str(payload).map_err(|serde_error| Error::StreamParse {

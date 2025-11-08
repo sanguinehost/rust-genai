@@ -4,10 +4,10 @@ use crate::{ModelIden, resolver, webc};
 use derive_more::{Display, From};
 use value_ext::JsonValueExtError;
 
-/// `GenAI` main Result type alias (with `genai::Error`)
+/// GenAI main Result type alias (with genai::Error)
 pub type Result<T> = core::result::Result<T, Error>;
 
-/// Main `GenAI` error
+/// Main GenAI error
 #[derive(Debug, From, Display)]
 #[allow(missing_docs)]
 pub enum Error {
@@ -30,8 +30,14 @@ pub enum Error {
 	#[display("JSON mode requested but no instruction/prompt provided.")]
 	JsonModeWithoutInstruction,
 
+	#[display("Failed to parse verbosity. Actual: '{actual}'")]
+	VerbosityParsing { actual: String },
+
 	#[display("Failed to parse reasoning. Actual: '{actual}'")]
 	ReasoningParsingError { actual: String },
+
+	#[display("Failed to parse service tier. Actual: '{actual}'")]
+	ServiceTierParsing { actual: String },
 
 	// -- Chat Output
 	#[display("No chat response from model '{model_iden}'")]
@@ -70,29 +76,17 @@ pub enum Error {
 		webc_error: webc::Error,
 	},
 
-	/// Error when an adapter feature is not supported.
-	#[display("Adapter '{adapter_kind}' does not support feature '{feature}'")]
-	AdapterFeatureNotSupported { adapter_kind: AdapterKind, feature: String },
-
-	/// General adapter error.
-	#[display("Adapter error: {_0}")]
-	AdapterError(String),
-
-	/// Unsupported operation error.
-	#[display("Unsupported operation: {_0}")]
-	UnsupportedOperation(String),
+	#[display("Error event in stream for model '{model_iden}'. Body: {body}")]
+	ChatResponse {
+		model_iden: ModelIden,
+		body: serde_json::Value,
+	},
 
 	// -- Chat Stream
 	#[display("Failed to parse stream data for model '{model_iden}'.\nCause: {serde_error}")]
 	StreamParse {
 		model_iden: ModelIden,
 		serde_error: serde_json::Error,
-	},
-
-	#[display("Error event in stream for model '{model_iden}'. Body: {body}")]
-	StreamEventError {
-		model_iden: ModelIden,
-		body: serde_json::Value,
 	},
 
 	#[display("Web stream error for model '{model_iden}'.\nCause: {cause}")]
@@ -104,6 +98,13 @@ pub enum Error {
 		model_iden: ModelIden,
 		resolver_error: resolver::Error,
 	},
+
+	// -- Adapter Support
+	#[display("Adapter '{adapter_kind}' does not support feature '{feature}'")]
+	AdapterNotSupported { adapter_kind: AdapterKind, feature: String },
+
+	#[display("Internal error: {_0}")]
+	Internal(String),
 
 	// -- Externals
 	#[display("Failed to clone EventSource request: {_0}")]

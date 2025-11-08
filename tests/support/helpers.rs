@@ -1,4 +1,4 @@
-use super::Result;
+use super::TestResult;
 use bitflags::parser::to_writer;
 use genai::chat::{ChatStream, ChatStreamEvent, StreamEnd};
 use tokio_stream::StreamExt;
@@ -33,9 +33,9 @@ bitflags::bitflags! {
 	#[derive(Clone)]
 	pub struct Check: u8 {
 		/// Check if the
-		const REASONING       = 0b0000_0001;
-		const REASONING_USAGE = 0b0000_0010;
-		const USAGE           = 0b0000_0100;
+		const REASONING       = 0b00000001;
+		const REASONING_USAGE = 0b00000010;
+		const USAGE           = 0b00000100;
 	}
 }
 
@@ -43,19 +43,19 @@ bitflags::bitflags! {
 impl std::fmt::Debug for Check {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		let mut buffer = String::new();
-		to_writer(self, &mut buffer).unwrap();
+		to_writer(self, &mut buffer)?;
 		write!(f, "{buffer}")
 	}
 }
 
-pub const fn contains_checks(checks: Option<Check>, matching_check: Check) -> bool {
+pub fn contains_checks(checks: Option<Check>, matching_check: Check) -> bool {
 	let Some(checks) = checks else { return false };
 
 	checks.contains(matching_check)
 }
 
 // Function to validate flags
-pub fn validate_checks(checks: Option<Check>, valid_flags: Check) -> Result<()> {
+pub fn validate_checks(checks: Option<Check>, valid_flags: Check) -> TestResult<()> {
 	let Some(checks) = checks else { return Ok(()) };
 
 	let unsupported = checks - valid_flags;
@@ -80,7 +80,7 @@ pub struct StreamExtract {
 	pub reasoning_content: Option<String>,
 }
 
-pub async fn extract_stream_end(mut chat_stream: ChatStream) -> Result<StreamExtract> {
+pub async fn extract_stream_end(mut chat_stream: ChatStream) -> TestResult<StreamExtract> {
 	let mut stream_end: Option<StreamEnd> = None;
 
 	let mut content: Vec<String> = Vec::new();
@@ -91,7 +91,7 @@ pub async fn extract_stream_end(mut chat_stream: ChatStream) -> Result<StreamExt
 			ChatStreamEvent::Start => (), // nothing to do
 			ChatStreamEvent::Chunk(s_chunk) => content.push(s_chunk.content),
 			ChatStreamEvent::ReasoningChunk(s_chunk) => reasoning_content.push(s_chunk.content),
-			ChatStreamEvent::ToolCall(_) => (), // ignore tool calls in this helper
+			ChatStreamEvent::ToolCallChunk(_) => (), // ignore tool call chunks for now
 			ChatStreamEvent::End(s_end) => {
 				stream_end = Some(s_end);
 				break;

@@ -1,6 +1,6 @@
 [package]
 name = "genai"
-version = "0.3.10-WIP"
+version = "0.4.5-WIP"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Multi-AI Providers Library for Rust. (OpenAI, Gemini, Anthropic, xAI, Ollama, Groq, DeepSeek, LlamaCpp)"
@@ -44,8 +44,8 @@ default = []
 llamacpp = ["dep:llama-cpp-2", "dep:shellexpand", "dep:encoding_rs", "dep:regex"]
 
 [dev-dependencies]
-simple-fs = "0.6.0"
-tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+simple-fs = "0.8.0"
+tracing-subscriber = {version = "0.3", features = ["env-filter"]}
 serial_test = "3.2.0"
 bitflags = "2.8.0"
 gcp_auth = "0.12.3"

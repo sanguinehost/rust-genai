@@ -15,18 +15,18 @@ pub struct CohereStreamer {
 	options: StreamerOptions,
 
 	// -- Set by the poll_next
-	/// Flag to prevent polling the `EventSource` after a `MessageStop` event
+	/// Flag to prevent polling the EventSource after a MessageStop event
 	done: bool,
 	captured_data: StreamerCapturedData,
 }
 
 impl CohereStreamer {
-	pub fn new(inner: WebStream, model_iden: ModelIden, options_set: &ChatOptionsSet) -> Self {
+	pub fn new(inner: WebStream, model_iden: ModelIden, options_set: ChatOptionsSet<'_, '_>) -> Self {
 		Self {
 			inner,
 			done: false,
 			options: StreamerOptions::new(model_iden, options_set),
-			captured_data: StreamerCapturedData::default(),
+			captured_data: Default::default(),
 		}
 	}
 }
@@ -70,15 +70,15 @@ impl futures::Stream for CohereStreamer {
 							let inter_event = match cohere_message.event_type.as_str() {
 								"stream-start" => InterStreamEvent::Start,
 								"text-generation" => {
-									if let Some(content) = cohere_message.text.as_ref() {
+									if let Some(content) = cohere_message.text {
 										// Add to the captured content if chat options allow it
 										if self.options.capture_content {
 											match self.captured_data.content {
-												Some(ref mut c) => c.push_str(content),
-												None => self.captured_data.content = Some(content.to_string()),
+												Some(ref mut c) => c.push_str(&content),
+												None => self.captured_data.content = Some(content.clone()),
 											}
 										}
-										InterStreamEvent::Chunk(content.to_string())
+										InterStreamEvent::Chunk(content)
 									} else {
 										continue;
 									}
@@ -104,9 +104,10 @@ impl futures::Stream for CohereStreamer {
 									};
 
 									let inter_stream_end = InterStreamEnd {
-										usage: captured_usage,
-										content: self.captured_data.content.take(),
-										reasoning_content: self.captured_data.reasoning_content.take(),
+										captured_usage,
+										captured_text_content: self.captured_data.content.take(),
+										captured_reasoning_content: self.captured_data.reasoning_content.take(),
+										captured_tool_calls: self.captured_data.tool_calls.take(),
 									};
 
 									InterStreamEvent::End(inter_stream_end)

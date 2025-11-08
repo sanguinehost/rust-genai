@@ -2,11 +2,17 @@ use genai::Client;
 use genai::chat::printer::print_chat_stream;
 use genai::chat::{ChatMessage, ChatRequest, Tool, ToolResponse};
 use serde_json::json;
+use tracing_subscriber::EnvFilter;
 
 const MODEL: &str = "gpt-4o-mini"; // or "gemini-2.0-flash" or other model supporting tool calls
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+	tracing_subscriber::fmt()
+		.with_env_filter(EnvFilter::new("genai=debug"))
+		// .with_max_level(tracing::Level::DEBUG) // To enable all sub-library tracing
+		.init();
+
 	let client = Client::default();
 
 	// 1. Define a tool for getting weather information
@@ -38,10 +44,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 	// 3. Make the initial call to get the function call
 	println!("--- Getting function call from model");
-	let response = client.exec_chat(MODEL, chat_req.clone(), None).await?;
+	let chat_res = client.exec_chat(MODEL, chat_req.clone(), None).await?;
 
 	// 4. Extract the tool calls from the response
-	let tool_calls = response.first_into_tool_calls().ok_or("Expected tool calls in the response")?;
+	let tool_calls = chat_res.into_tool_calls();
+
+	if tool_calls.is_empty() {
+		return Err("Expected tool calls in the response".into());
+	}
 
 	println!("--- Tool calls received:");
 	for tool_call in &tool_calls {
@@ -67,10 +77,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 	// 7. Get the final response from the model with the function results
 	println!("\n--- Getting final response with function results");
-	let response = client.exec_chat_stream(MODEL, chat_req, None).await?;
+	let chat_res = client.exec_chat_stream(MODEL, chat_req, None).await?;
 
 	println!("\n--- Final response:");
-	print_chat_stream(response, None).await?;
+	print_chat_stream(chat_res, None).await?;
 
 	Ok(())
 }

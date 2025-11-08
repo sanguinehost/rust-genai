@@ -1,182 +1,322 @@
-use crate::chat::{ToolCall, ToolResponse};
-use derive_more::derive::From;
+/// Note: MessageContent is used for ChatRequest and ChatResponse.
+use crate::chat::{ContentPart, ToolCall, ToolResponse};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 
-#[derive(Debug, Clone, Serialize, Deserialize, From)]
-pub enum MessageContent {
-	/// Text content
-	Text(String),
-
-	/// Content parts
-	Parts(Vec<ContentPart>),
-
-	/// Tool calls
-	#[from]
-	ToolCalls(Vec<ToolCall>),
-
-	/// Tool call responses
-	#[from]
-	ToolResponses(Vec<ToolResponse>),
+/// Message content container used in ChatRequest and ChatResponse.
+///
+/// Transparent wrapper around a list of ContentPart (Text, Binary, ToolCall, or ToolResponse).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct MessageContent {
+	/// The parts that compose this message.
+	parts: Vec<ContentPart>,
 }
 
 /// Constructors
 impl MessageContent {
-	/// Create a new `MessageContent` with the Text variant
+	/// Create a message containing a single text part.
 	pub fn from_text(content: impl Into<String>) -> Self {
-		Self::Text(content.into())
+		Self {
+			parts: vec![ContentPart::Text(content.into())],
+		}
 	}
 
-	/// Create a new `MessageContent` from provided content parts
+	/// Build from the provided content parts.
 	pub fn from_parts(parts: impl Into<Vec<ContentPart>>) -> Self {
-		Self::Parts(parts.into())
+		Self { parts: parts.into() }
 	}
 
-	/// Create a new `MessageContent` with the `ToolCalls` variant
-	#[must_use]
-	pub const fn from_tool_calls(tool_calls: Vec<ToolCall>) -> Self {
-		Self::ToolCalls(tool_calls)
+	/// Build from the provided tool calls.
+	pub fn from_tool_calls(tool_calls: Vec<ToolCall>) -> Self {
+		Self {
+			parts: tool_calls.into_iter().map(ContentPart::ToolCall).collect(),
+		}
 	}
 }
 
+/// Fluid Setters/Builders
+impl MessageContent {
+	/// Append one part and return self (builder style).
+	pub fn append(mut self, part: impl Into<ContentPart>) -> Self {
+		self.parts.push(part.into());
+		self
+	}
+
+	/// Append one part (mutating).
+	pub fn push(&mut self, part: impl Into<ContentPart>) {
+		self.parts.push(part.into());
+	}
+
+	/// Extend with an iterator of parts, returning self.
+	pub fn extended<I>(mut self, iter: I) -> Self
+	where
+		I: IntoIterator<Item = ContentPart>,
+	{
+		self.parts.extend(iter);
+		self
+	}
+}
+
+impl Extend<ContentPart> for MessageContent {
+	fn extend<T: IntoIterator<Item = ContentPart>>(&mut self, iter: T) {
+		self.parts.extend(iter);
+	}
+}
+
+// region:    --- Iterator Support
+
+use crate::support;
+use std::iter::FromIterator;
+use std::slice::{Iter, IterMut};
+
+impl IntoIterator for MessageContent {
+	type Item = ContentPart;
+	type IntoIter = std::vec::IntoIter<ContentPart>;
+	fn into_iter(self) -> Self::IntoIter {
+		self.parts.into_iter()
+	}
+}
+
+impl<'a> IntoIterator for &'a MessageContent {
+	type Item = &'a ContentPart;
+	type IntoIter = Iter<'a, ContentPart>;
+	fn into_iter(self) -> Self::IntoIter {
+		self.parts.iter()
+	}
+}
+
+impl<'a> IntoIterator for &'a mut MessageContent {
+	type Item = &'a mut ContentPart;
+	type IntoIter = IterMut<'a, ContentPart>;
+	fn into_iter(self) -> Self::IntoIter {
+		self.parts.iter_mut()
+	}
+}
+
+// collect() support
+impl FromIterator<ContentPart> for MessageContent {
+	fn from_iter<T: IntoIterator<Item = ContentPart>>(iter: T) -> Self {
+		Self {
+			parts: iter.into_iter().collect(),
+		}
+	}
+}
+
+// endregion: --- Iterator Support
+
 /// Getters
 impl MessageContent {
-	/// Returns the `MessageContent` as &str, only if it is `MessageContent::Text`
-	/// Otherwise, it returns None.
-	///
-	/// NOTE: When multi-part content is present, this will return None and won't concatenate the text parts.
-	#[must_use]
-	pub fn text_as_str(&self) -> Option<&str> {
-		match self {
-			Self::Text(content) => Some(content.as_str()),
-			Self::Parts(_) | Self::ToolCalls(_) | Self::ToolResponses(_) => None,
-		}
+	/// Return all parts.
+	pub fn parts(&self) -> &Vec<ContentPart> {
+		&self.parts
 	}
 
-	/// Consumes the `MessageContent` and returns it as &str,
-	/// only if it is `MessageContent::Text`; otherwise, it returns None.
-	///
-	/// NOTE: When multi-part content is present, this will return None and won't concatenate the text parts.
-	#[must_use]
-	pub fn text_into_string(self) -> Option<String> {
-		match self {
-			Self::Text(content) => Some(content),
-			Self::Parts(_) | Self::ToolCalls(_) | Self::ToolResponses(_) => None,
-		}
+	/// Consume and return the underlying parts.
+	pub fn into_parts(self) -> Vec<ContentPart> {
+		self.parts
 	}
 
-	/// Checks if the text content or the tool calls are empty.
-	#[must_use]
+	/// Return all text parts as &str.
+	pub fn texts(&self) -> Vec<&str> {
+		self.parts.iter().filter_map(|p| p.as_text()).collect()
+	}
+
+	/// Consume and return all text parts as owned Strings.
+	pub fn into_texts(self) -> Vec<String> {
+		self.parts.into_iter().filter_map(|p| p.into_text()).collect()
+	}
+
+	/// Return references to all ToolCall parts.
+	pub fn tool_calls(&self) -> Vec<&ToolCall> {
+		self.parts
+			.iter()
+			.filter_map(|p| match p {
+				ContentPart::ToolCall(tc) => Some(tc),
+				_ => None,
+			})
+			.collect()
+	}
+
+	/// Consume and return all ToolCall parts.
+	pub fn into_tool_calls(self) -> Vec<ToolCall> {
+		self.parts
+			.into_iter()
+			.filter_map(|p| match p {
+				ContentPart::ToolCall(tc) => Some(tc),
+				_ => None,
+			})
+			.collect()
+	}
+
+	/// Return references to all ToolResponse parts.
+	pub fn tool_responses(&self) -> Vec<&ToolResponse> {
+		self.parts
+			.iter()
+			.filter_map(|p| match p {
+				ContentPart::ToolResponse(tr) => Some(tr),
+				_ => None,
+			})
+			.collect()
+	}
+
+	/// Consume and return all ToolResponse parts.
+	pub fn into_tool_responses(self) -> Vec<ToolResponse> {
+		self.parts
+			.into_iter()
+			.filter_map(|p| match p {
+				ContentPart::ToolResponse(tr) => Some(tr),
+				_ => None,
+			})
+			.collect()
+	}
+
+	/// True if there are no parts.
 	pub fn is_empty(&self) -> bool {
-		match self {
-			Self::Text(content) => content.is_empty(),
-			Self::Parts(parts) => parts.is_empty(),
-			Self::ToolCalls(tool_calls) => tool_calls.is_empty(),
-			Self::ToolResponses(tool_responses) => tool_responses.is_empty(),
+		self.parts.is_empty()
+	}
+
+	/// Number of parts.
+	pub fn len(&self) -> usize {
+		self.parts.len()
+	}
+
+	/// True if empty, or if all parts are text whose content is empty or whitespace.
+	pub fn is_text_empty(&self) -> bool {
+		if self.parts.is_empty() {
+			return true;
 		}
+		self.parts
+			.iter()
+			.all(|p| matches!(p, ContentPart::Text(t) if t.trim().is_empty()))
+	}
+}
+
+/// Convenient Getters
+impl MessageContent {
+	/// Return the first text part, if any.
+	///
+	/// Does not concatenate multiple text parts.
+	pub fn first_text(&self) -> Option<&str> {
+		let first_text_part = self.parts.iter().find(|p| p.is_text())?;
+		first_text_part.as_text()
+	}
+
+	/// Consume and return the first text part as a String, if any.
+	///
+	/// Does not concatenate multiple text parts.
+	pub fn into_first_text(self) -> Option<String> {
+		let first_text_part = self.parts.into_iter().find(|p| p.is_text())?;
+		first_text_part.into_text()
+	}
+
+	/// Join all text parts, separating segments with a blank line.
+	pub fn joined_texts(&self) -> Option<String> {
+		let texts = self.texts();
+		if texts.is_empty() {
+			return None;
+		}
+
+		if texts.len() == 1 {
+			return texts.first().map(|s| s.to_string());
+		}
+
+		let mut combined = String::new();
+		for text in texts {
+			if !combined.is_empty() {
+				support::combine_text_with_empty_line(&mut combined, text);
+			}
+		}
+		Some(combined)
+	}
+
+	/// Consume and join all text parts, separating segments with a blank line.
+	pub fn into_joined_texts(self) -> Option<String> {
+		let texts = self.into_texts();
+		if texts.is_empty() {
+			return None;
+		}
+
+		if texts.len() == 1 {
+			return texts.into_iter().next();
+		}
+
+		let mut combined = String::new();
+		for text in texts {
+			support::combine_text_with_empty_line(&mut combined, &text);
+		}
+		Some(combined)
+	}
+}
+
+/// is_.., contains_..
+impl MessageContent {
+	/// True if every part is text.
+	pub fn is_text_only(&self) -> bool {
+		self.parts.iter().all(|p| p.is_text())
+	}
+
+	/// True if at least one part is text.
+	pub fn contains_text(&self) -> bool {
+		self.parts.iter().any(|p| p.is_text())
+	}
+
+	/// True if at least one part is a ToolCall.
+	pub fn contains_tool_call(&self) -> bool {
+		self.parts.iter().any(|p| p.is_tool_call())
+	}
+
+	/// True if at least one part is a ToolResponse.
+	pub fn contains_tool_response(&self) -> bool {
+		self.parts.iter().any(|p| p.is_tool_response())
 	}
 }
 
 // region:    --- Froms
 
-impl From<String> for MessageContent {
-	fn from(s: String) -> Self {
-		Self::from_text(s)
-	}
-}
-
-impl<'a> From<&'a str> for MessageContent {
-	fn from(s: &'a str) -> Self {
-		Self::from_text(s.to_string())
+impl From<&str> for MessageContent {
+	fn from(s: &str) -> Self {
+		Self {
+			parts: vec![ContentPart::Text(s.to_string())],
+		}
 	}
 }
 
 impl From<&String> for MessageContent {
 	fn from(s: &String) -> Self {
-		Self::from_text(s.clone())
+		Self {
+			parts: vec![ContentPart::Text(s.clone())],
+		}
+	}
+}
+
+impl From<String> for MessageContent {
+	fn from(s: String) -> Self {
+		Self {
+			parts: vec![ContentPart::Text(s)],
+		}
+	}
+}
+
+impl From<Vec<ToolCall>> for MessageContent {
+	fn from(tool_calls: Vec<ToolCall>) -> Self {
+		Self {
+			parts: tool_calls.into_iter().map(ContentPart::ToolCall).collect(),
+		}
 	}
 }
 
 impl From<ToolResponse> for MessageContent {
 	fn from(tool_response: ToolResponse) -> Self {
-		Self::ToolResponses(vec![tool_response])
+		Self {
+			parts: vec![ContentPart::ToolResponse(tool_response)],
+		}
 	}
 }
 
 impl From<Vec<ContentPart>> for MessageContent {
 	fn from(parts: Vec<ContentPart>) -> Self {
-		Self::Parts(parts)
+		Self { parts }
 	}
 }
 
 // endregion: --- Froms
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum ContentPart {
-	Text(String),
-	Image { content_type: String, source: MediaSource },
-	Document { content_type: String, source: MediaSource },
-}
-
-/// Constructors
-impl ContentPart {
-	pub fn from_text(text: impl Into<String>) -> Self {
-		Self::Text(text.into())
-	}
-
-	pub fn from_image_base64(content_type: impl Into<String>, content: impl Into<Arc<str>>) -> Self {
-		Self::Image {
-			content_type: content_type.into(),
-			source: MediaSource::Base64(content.into()),
-		}
-	}
-
-	pub fn from_image_url(content_type: impl Into<String>, url: impl Into<String>) -> Self {
-		Self::Image {
-			content_type: content_type.into(),
-			source: MediaSource::Url(url.into()),
-		}
-	}
-
-	pub fn from_document_base64(content_type: impl Into<String>, content: impl Into<Arc<str>>) -> Self {
-		Self::Document {
-			content_type: content_type.into(),
-			source: MediaSource::Base64(content.into()),
-		}
-	}
-
-	pub fn from_document_url(content_type: impl Into<String>, url: impl Into<String>) -> Self {
-		Self::Document {
-			content_type: content_type.into(),
-			source: MediaSource::Url(url.into()),
-		}
-	}
-}
-
-// region:    --- Froms
-
-impl<'a> From<&'a str> for ContentPart {
-	fn from(s: &'a str) -> Self {
-		Self::Text(s.to_string())
-	}
-}
-
-// endregion: --- Froms
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum MediaSource {
-	/// For models/services that support URL as input
-	/// NOTE: Few AI services support this.
-	Url(String),
-
-	/// The base64 string of the media
-	///
-	/// NOTE: Here we use an Arc<str> to avoid cloning large amounts of data when cloning a `ChatRequest`.
-	///       The overhead is minimal compared to cloning relatively large data.
-	///       The downside is that it will be an Arc even when used only once, but for this particular data type, the net benefit is positive.
-	Base64(Arc<str>),
-}
-
-// No `Local` location; this would require handling errors like "file not found" etc.
-// Such a file can be easily provided by the user as Base64, and we can implement a convenient
-// TryFrom<File> to Base64 version. All LLMs accept local images only as Base64.
