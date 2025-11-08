@@ -31,7 +31,7 @@ impl AnthropicStreamer {
 		Self {
 			inner,
 			done: false,
-			options: StreamerOptions::new(model_iden, options_set),
+			options: StreamerOptions::new(model_iden, &options_set),
 			captured_data: Default::default(),
 			in_progress_block: InProgressBlock::Text,
 		}

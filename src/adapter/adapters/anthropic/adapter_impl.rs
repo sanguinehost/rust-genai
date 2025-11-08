@@ -1,5 +1,5 @@
 use crate::adapter::adapters::support::get_api_key;
-use crate::adapter::anthropic::AnthropicStreamer;
+use crate::adapter::anthropic::streamer::AnthropicStreamer;
 use crate::adapter::{Adapter, AdapterKind, ServiceType, WebRequestData};
 use crate::chat::{
 	Binary, BinarySource, ChatOptionsSet, ChatRequest, ChatResponse, ChatRole, ChatStream, ChatStreamResponse,
@@ -82,7 +82,7 @@ impl Adapter for AnthropicAdapter {
 		let ServiceTarget { endpoint, auth, model } = target;
 
 		// -- api_key
-		let api_key = get_api_key(auth, &model)?;
+		let api_key = get_api_key(&auth, &model)?;
 
 		// -- url
 		let url = Self::get_service_url(&model, service_type, endpoint)?;

@@ -81,7 +81,7 @@ pub fn to_embed_request_data(
 	options_set: EmbedOptionsSet<'_, '_>,
 ) -> Result<WebRequestData> {
 	let ServiceTarget { model, auth, .. } = service_target;
-	let api_key = get_api_key(auth, &model)?;
+	let api_key = get_api_key(&auth, &model)?;
 
 	// Extract the actual model name (without namespace) - not needed for Gemini request body
 	let (_model_name, _) = model.model_name.as_model_name_and_namespace();

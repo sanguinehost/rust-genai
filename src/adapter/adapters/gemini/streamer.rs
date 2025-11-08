@@ -25,7 +25,7 @@ impl GeminiStreamer {
 		Self {
 			inner,
 			done: false,
-			options: StreamerOptions::new(model_iden, options_set),
+			options: StreamerOptions::new(model_iden, &options_set),
 			captured_data: Default::default(),
 		}
 	}

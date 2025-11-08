@@ -1,5 +1,5 @@
 use crate::adapter::adapters::support::get_api_key;
-use crate::adapter::gemini::GeminiStreamer;
+use crate::adapter::gemini::streamer::GeminiStreamer;
 use crate::adapter::{Adapter, AdapterKind, ServiceType, WebRequestData};
 use crate::chat::{
 	Binary, BinarySource, ChatOptionsSet, ChatRequest, ChatResponse, ChatResponseFormat, ChatRole, ChatStream,
@@ -76,7 +76,7 @@ impl Adapter for GeminiAdapter {
 		let (model_name, _) = model.model_name.as_model_name_and_namespace();
 
 		// -- api_key
-		let api_key = get_api_key(auth, &model)?;
+		let api_key = get_api_key(&auth, &model)?;
 
 		// -- headers (empty for gemini)
 		let headers = Headers::from(("x-goog-api-key".to_string(), api_key.to_string()));

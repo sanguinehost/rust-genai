@@ -1,5 +1,5 @@
 use crate::adapter::adapters::support::get_api_key;
-use crate::adapter::cohere::CohereStreamer;
+use crate::adapter::cohere::streamer::CohereStreamer;
 use crate::adapter::{Adapter, AdapterKind, ServiceType, WebRequestData};
 use crate::chat::{
 	ChatOptionsSet, ChatRequest, ChatResponse, ChatRole, ChatStream, ChatStreamResponse, MessageContent, Usage,
@@ -64,7 +64,7 @@ impl Adapter for CohereAdapter {
 		let ServiceTarget { endpoint, auth, model } = target;
 
 		// -- api_key (this Adapter requires it)
-		let api_key = get_api_key(auth, &model)?;
+		let api_key = get_api_key(&auth, &model)?;
 
 		// -- url
 		let url = Self::get_service_url(&model, service_type, endpoint)?;

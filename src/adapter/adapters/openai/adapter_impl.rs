@@ -211,7 +211,7 @@ impl OpenAIAdapter {
 		let adapter_kind = model.adapter_kind;
 
 		// -- api_key
-		let api_key = get_api_key(auth, &model)?;
+		let api_key = get_api_key(&auth, &model)?;
 
 		// -- url
 		let url = AdapterDispatcher::get_service_url(&model, service_type, endpoint)?;
