@@ -1,5 +1,5 @@
 use genai::Client;
-use genai::chat::{ChatMessage, ChatRequest, ContentPart, MediaSource};
+use genai::chat::{Binary, BinarySource, ChatMessage, ChatRequest, ContentPart};
 use std::fs;
 use std::sync::Arc;
 
@@ -34,26 +34,26 @@ async fn test_chat_document_b64_ok() -> Result<()> {
 	};
 
 	let messages = vec![ChatMessage::user(vec![
-		ContentPart::Document {
+		ContentPart::Binary(Binary {
 			content_type: "application/pdf".to_string(),
-			source: MediaSource::Base64(Arc::from(base64_pdf.as_str())),
-		},
+			source: BinarySource::Base64(Arc::from(base64_pdf.as_str())),
+			name: None,
+		}),
 		ContentPart::Text("Summarize the content of this document.".to_string()),
 	])];
 
 	let chat_req = ChatRequest::new(messages);
 
 	let res = client.exec_chat(MODEL, chat_req, None).await?;
-	assert!(!res.contents.is_empty(), "Expected content in response");
-	println!("test_chat_document_b64_ok - Response Contents: {:?}", res.contents);
 
-	// Basic check for text content in response
-	if let Some(genai::chat::MessageContent::Text(text_content)) = res.contents.first() {
-		assert!(!text_content.is_empty(), "Expected non-empty text response");
-		println!("Document summary: {text_content}");
-	} else {
-		panic!("Expected a text response, got: {:?}", res.contents);
-	}
+	// In v0.4.x, response.content is MessageContent (struct), not Vec<MessageContent>
+	let content = &res.content;
+	assert!(content.contains_text(), "Expected text content in response");
+
+	let texts = content.texts();
+	assert!(!texts.is_empty(), "Expected non-empty text response");
+	println!("test_chat_document_b64_ok - Response text: {}", texts.join("\n"));
+	println!("Document summary: {}", texts.join("\n"));
 
 	Ok(())
 }
@@ -66,10 +66,11 @@ async fn test_chat_document_url_ok() -> Result<()> {
 	let doc_url = "https://discovery.ucl.ac.uk/id/eprint/10089234/1/343019_3_art_0_py4t4l_convrt.pdf";
 
 	let messages = vec![ChatMessage::user(vec![
-		ContentPart::Document {
+		ContentPart::Binary(Binary {
 			content_type: "application/pdf".to_string(),
-			source: MediaSource::Url(doc_url.to_string()),
-		},
+			source: BinarySource::Url(doc_url.to_string()),
+			name: None,
+		}),
 		ContentPart::Text("Summarize the content of this document.".to_string()),
 	])];
 
@@ -82,7 +83,7 @@ async fn test_chat_document_url_ok() -> Result<()> {
 	match result {
 		Ok(res) => {
 			// If it succeeds unexpectedly, log the response
-			println!("test_chat_document_url_ok - Unexpected success: {:?}", res.contents);
+			println!("test_chat_document_url_ok - Unexpected success: {:?}", res.content);
 			Ok(())
 		}
 		Err(e) => {

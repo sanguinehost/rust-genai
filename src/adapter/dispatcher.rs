@@ -244,4 +244,96 @@ impl AdapterDispatcher {
             AdapterKind::LlamaCpp => llamacpp::LlamaCppAdapter::to_embed_response(model_iden, web_response, options_set),
 		}
 	}
+
+	// region:    --- Imagen Generation Methods
+
+	pub fn to_imagen_generation_request_data(
+		target: ServiceTarget,
+		request: crate::chat::ImagenGenerateImagesRequest,
+	) -> Result<WebRequestData> {
+		let adapter_kind = target.model.adapter_kind;
+		match adapter_kind {
+			AdapterKind::Gemini => GeminiAdapter::to_imagen_generation_request_data(target, request),
+			_ => Err(Error::AdapterNotSupported {
+				adapter_kind,
+				feature: "Imagen 3 Image Generation".to_string(),
+			}),
+		}
+	}
+
+	pub fn to_imagen_generation_response(
+		model_iden: ModelIden,
+		web_response: WebResponse,
+	) -> Result<crate::chat::ImagenGenerateImagesResponse> {
+		let adapter_kind = model_iden.adapter_kind;
+		match adapter_kind {
+			AdapterKind::Gemini => GeminiAdapter::to_imagen_generation_response(model_iden, web_response),
+			_ => Err(Error::AdapterNotSupported {
+				adapter_kind,
+				feature: "Imagen 3 Image Generation".to_string(),
+			}),
+		}
+	}
+
+	// endregion: --- Imagen Generation Methods
+
+	// region:    --- Veo Video Generation Methods
+
+	pub fn to_veo_generation_request_data(
+		target: ServiceTarget,
+		request: crate::chat::VeoGenerateVideosRequest,
+	) -> Result<WebRequestData> {
+		let adapter_kind = target.model.adapter_kind;
+		match adapter_kind {
+			AdapterKind::Gemini => GeminiAdapter::to_veo_generation_request_data(target, request),
+			_ => Err(Error::AdapterNotSupported {
+				adapter_kind,
+				feature: "Veo Video Generation".to_string(),
+			}),
+		}
+	}
+
+	pub fn to_veo_generation_response(
+		model_iden: ModelIden,
+		web_response: WebResponse,
+	) -> Result<crate::chat::VeoGenerateVideosResponse> {
+		let adapter_kind = model_iden.adapter_kind;
+		match adapter_kind {
+			AdapterKind::Gemini => GeminiAdapter::to_veo_generation_response(model_iden, web_response),
+			_ => Err(Error::AdapterNotSupported {
+				adapter_kind,
+				feature: "Veo Video Generation".to_string(),
+			}),
+		}
+	}
+
+	pub fn get_veo_operation_status_request_data(
+		target: ServiceTarget,
+		operation_name: &str,
+	) -> Result<WebRequestData> {
+		let adapter_kind = target.model.adapter_kind;
+		match adapter_kind {
+			AdapterKind::Gemini => GeminiAdapter::get_veo_operation_status_request_data(target, operation_name),
+			_ => Err(Error::AdapterNotSupported {
+				adapter_kind,
+				feature: "Veo Video Generation Status".to_string(),
+			}),
+		}
+	}
+
+	pub fn to_veo_operation_status_response(
+		model_iden: ModelIden,
+		web_response: WebResponse,
+	) -> Result<crate::chat::VeoOperationStatusResponse> {
+		let adapter_kind = model_iden.adapter_kind;
+		match adapter_kind {
+			AdapterKind::Gemini => GeminiAdapter::to_veo_operation_status_response(model_iden, web_response),
+			_ => Err(Error::AdapterNotSupported {
+				adapter_kind,
+				feature: "Veo Video Generation Status".to_string(),
+			}),
+		}
+	}
+
+	// endregion: --- Veo Video Generation Methods
 }

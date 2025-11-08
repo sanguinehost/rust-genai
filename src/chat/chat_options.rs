@@ -159,6 +159,11 @@ impl ChatOptions {
 		self
 	}
 
+	pub fn with_response_modalities(mut self, values: Vec<String>) -> Self {
+		self.response_modalities = Some(values);
+		self
+	}
+
 	/// Enables or disables normalization of reasoning content (e.g., `<think>...</think>`).
 	pub fn with_normalize_reasoning_content(mut self, value: bool) -> Self {
 		self.normalize_reasoning_content = Some(value);
@@ -538,6 +543,12 @@ impl ChatOptionsSet<'_, '_> {
 		self.chat
 			.and_then(|chat| chat.include_thoughts)
 			.or_else(|| self.client.and_then(|client| client.include_thoughts))
+	}
+
+	pub fn response_modalities(&self) -> Option<&Vec<String>> {
+		self.chat
+			.and_then(|chat| chat.response_modalities.as_ref())
+			.or_else(|| self.client.and_then(|client| client.response_modalities.as_ref()))
 	}
 
 	pub fn verbosity(&self) -> Option<&Verbosity> {

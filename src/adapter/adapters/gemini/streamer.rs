@@ -95,6 +95,10 @@ impl futures::Stream for GeminiStreamer {
 								match g_content_item {
 									GeminiChatContent::Text(text) => stream_text_content.push_str(&text),
 									GeminiChatContent::ToolCall(tool_call) => stream_tool_call = Some(tool_call),
+									GeminiChatContent::Binary(_) => {
+										// Binary content (images) are typically not streamed incrementally
+										// They arrive complete, so we skip them in the streaming context
+									}
 								}
 							}
 

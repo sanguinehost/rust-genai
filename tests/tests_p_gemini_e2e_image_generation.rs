@@ -9,7 +9,7 @@
 //! The generated images will be saved to the `output/` directory.
 
 use genai::Client;
-use genai::chat::{ChatMessage, ChatOptions, ChatRequest, ImagenGenerateImagesRequest, MessageContent};
+use genai::chat::{BinarySource, ChatMessage, ChatOptions, ChatRequest, ContentPart, ImagenGenerateImagesRequest};
 use std::fs::File;
 use std::io::Write;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -75,42 +75,34 @@ async fn test_conversational_image_generation() -> Result<(), Box<dyn std::error
 	let options = ChatOptions::default().with_response_modalities(vec!["TEXT".to_string(), "IMAGE".to_string()]);
 
 	let response = client
-		.exec_chat("gemini-2.0-flash-preview-image-generation", request, Some(&options))
+		.exec_chat("gemini-2.5-flash-image", request, Some(&options))
 		.await?;
 
-	assert!(!response.contents.is_empty(), "No content in response");
+	// In v0.4.x, response.content is MessageContent (struct), not Vec<MessageContent>
+	let content = &response.content;
+	let parts = content.parts();
+	assert!(!parts.is_empty(), "No parts in response content");
 
 	let mut image_count = 0;
-	for (content_idx, content) in response.contents.iter().enumerate() {
-		match content {
-			MessageContent::Text(text) => {
-				println!("  Response text: {text}");
+	for (part_idx, part) in parts.iter().enumerate() {
+		match part {
+			ContentPart::Text(text) => {
+				println!("  Text part: {text}");
 			}
-			MessageContent::Parts(parts) => {
-				for part in parts {
-					match part {
-						genai::chat::ContentPart::Text(text) => {
-							println!("  Text part: {text}");
-						}
-						genai::chat::ContentPart::Image { source, .. } => {
-							if let genai::chat::MediaSource::Base64(data) = source {
-								let filename = format!(
-									"output/conversational_test_{}_{}_{}.png",
-									get_timestamp(),
-									content_idx,
-									image_count
-								);
-								save_image(&filename, data)?;
-								image_count += 1;
-							}
-						}
-						genai::chat::ContentPart::Document { .. } => {
-							// Skip documents in image generation test
-						}
-					}
+			ContentPart::Binary(binary) => {
+				if let BinarySource::Base64(data) = &binary.source {
+					let filename = format!(
+						"output/conversational_test_{}_{}.png",
+						get_timestamp(),
+						part_idx
+					);
+					save_image(&filename, data)?;
+					image_count += 1;
 				}
 			}
-			_ => {}
+			ContentPart::ToolCall(_) | ContentPart::ToolResponse(_) => {
+				// Skip tool calls/responses in image generation test
+			}
 		}
 	}
 
@@ -134,7 +126,7 @@ async fn test_quick_validation() {
 	let imagen_model = client.default_model("imagen-3.0-generate-002");
 	assert!(imagen_model.is_ok(), "Imagen model should be recognized");
 
-	let gemini_model = client.default_model("gemini-2.0-flash-preview-image-generation");
+	let gemini_model = client.default_model("gemini-2.5-flash-image");
 	assert!(gemini_model.is_ok(), "Gemini model should be recognized");
 
 	println!("✅ Quick validation passed!");
@@ -151,7 +143,7 @@ async fn run_all_e2e_tests() -> Result<(), Box<dyn std::error::Error>> {
 	assert!(std::path::Path::new("output").exists(), "Output directory should exist");
 	let client = Client::builder().build();
 	let _ = client.default_model("imagen-3.0-generate-002")?;
-	let _ = client.default_model("gemini-2.0-flash-preview-image-generation")?;
+	let _ = client.default_model("gemini-2.5-flash-image")?;
 	println!("✅ Quick validation passed!");
 
 	// Check for API key
@@ -225,42 +217,34 @@ async fn test_conversational_generation_impl() -> Result<(), Box<dyn std::error:
 	let options = ChatOptions::default().with_response_modalities(vec!["TEXT".to_string(), "IMAGE".to_string()]);
 
 	let response = client
-		.exec_chat("gemini-2.0-flash-preview-image-generation", request, Some(&options))
+		.exec_chat("gemini-2.5-flash-image", request, Some(&options))
 		.await?;
 
-	assert!(!response.contents.is_empty(), "No content in response");
+	// In v0.4.x, response.content is MessageContent (struct), not Vec<MessageContent>
+	let content = &response.content;
+	let parts = content.parts();
+	assert!(!parts.is_empty(), "No parts in response content");
 
 	let mut image_count = 0;
-	for (content_idx, content) in response.contents.iter().enumerate() {
-		match content {
-			MessageContent::Text(text) => {
-				println!("  Response text: {text}");
+	for (part_idx, part) in parts.iter().enumerate() {
+		match part {
+			ContentPart::Text(text) => {
+				println!("  Text part: {text}");
 			}
-			MessageContent::Parts(parts) => {
-				for part in parts {
-					match part {
-						genai::chat::ContentPart::Text(text) => {
-							println!("  Text part: {text}");
-						}
-						genai::chat::ContentPart::Image { source, .. } => {
-							if let genai::chat::MediaSource::Base64(data) = source {
-								let filename = format!(
-									"output/conversational_test_{}_{}_{}.png",
-									get_timestamp(),
-									content_idx,
-									image_count
-								);
-								save_image(&filename, data)?;
-								image_count += 1;
-							}
-						}
-						genai::chat::ContentPart::Document { .. } => {
-							// Skip documents in image generation test
-						}
-					}
+			ContentPart::Binary(binary) => {
+				if let BinarySource::Base64(data) = &binary.source {
+					let filename = format!(
+						"output/conversational_test_{}_{}.png",
+						get_timestamp(),
+						part_idx
+					);
+					save_image(&filename, data)?;
+					image_count += 1;
 				}
 			}
-			_ => {}
+			ContentPart::ToolCall(_) | ContentPart::ToolResponse(_) => {
+				// Skip tool calls/responses in image generation test
+			}
 		}
 	}
 

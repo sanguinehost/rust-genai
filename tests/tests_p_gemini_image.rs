@@ -8,7 +8,7 @@
 //!
 
 use genai::Client;
-use genai::chat::{ChatMessage, ChatOptions, ChatRequest, ImagenGenerateImagesRequest, MessageContent};
+use genai::chat::{BinarySource, ChatMessage, ChatOptions, ChatRequest, ContentPart, ImagenGenerateImagesRequest};
 use std::fs::{self, File};
 use std::io::Write;
 use std::sync::Arc;
@@ -48,17 +48,17 @@ fn save_image_bytes(file_name_prefix: &str, image_idx: usize, image_bytes: &Arc<
 	Ok(())
 }
 
-// --- Imagen 3 Tests ---
+// --- Imagen Tests ---
 
 #[tokio::test]
-async fn test_imagen_3_generate_simple_ok() -> Result<(), String> {
+async fn test_imagen_generate_simple_ok() -> Result<(), String> {
 	let client = simple_client();
-	let model_name = "imagen-3.0-generate-002"; // Ensure this model is available and enabled
+	let model_name = "imagen-4.0-fast-generate-001"; // Imagen 4 Fast ($0.02/image)
 
-	println!("->> test_imagen_3_generate_simple_ok - model: {model_name}");
+	println!("->> test_imagen_generate_simple_ok - model: {model_name}");
 
 	let request =
-		ImagenGenerateImagesRequest::new("A photorealistic image of a futuristic city with flying cars at sunset.")
+		ImagenGenerateImagesRequest::new("A highly detailed, photorealistic image of a sleek sports car on a mountain road at golden hour.")
 			.with_number_of_images(1)
 			.with_aspect_ratio("16:9");
 
@@ -75,7 +75,7 @@ async fn test_imagen_3_generate_simple_ok() -> Result<(), String> {
 	);
 
 	for (idx, generated_image) in response.generated_images.iter().enumerate() {
-		save_image_bytes("imagen3_simple", idx, &generated_image.image_bytes)?;
+		save_image_bytes("imagen_simple", idx, &generated_image.image_bytes)?;
 	}
 
 	Ok(())
@@ -86,53 +86,51 @@ async fn test_imagen_3_generate_simple_ok() -> Result<(), String> {
 #[tokio::test]
 async fn test_conversational_image_generation_ok() -> Result<(), String> {
 	let client = simple_client();
-	let model_name = "gemini-2.0-flash-preview-image-generation"; // Ensure this model is available
+	let model_name = "gemini-2.5-flash-image"; // Gemini native image generation model
 
 	println!("->> test_conversational_image_generation_ok - model: {model_name}");
 
-	let user_message = ChatMessage::user("Create an image of a cute cat wearing a tiny hat.");
+	let user_message = ChatMessage::user("Generate an image of a cute fluffy ginger tabby kitten with bright green eyes, wearing a small blue knitted hat that sits slightly askew on its head. The kitten should be sitting attentively looking at the camera.");
 	let chat_request = ChatRequest::new(vec![user_message]);
-	let chat_options = ChatOptions::default().with_response_modalities(vec!["TEXT".to_string(), "IMAGE".to_string()]);
+	let chat_options = ChatOptions::default().with_response_modalities(vec!["Text".to_string(), "Image".to_string()]);
 
 	let response = client
 		.exec_chat(model_name, chat_request, Some(&chat_options))
 		.await
 		.map_err(|e| format!("API call failed: {e:?}"))?;
 
-	assert!(!response.contents.is_empty(), "No content in response.");
+	// In v0.4.x, response.content is MessageContent (struct), not Vec<MessageContent>
+	let content = &response.content;
+
+	// Check if there are any parts
+	let parts = content.parts();
+	assert!(!parts.is_empty(), "No parts in response content.");
 
 	let mut image_found = false;
-	for (content_idx, content) in response.contents.iter().enumerate() {
-		println!("   Response Content #{content_idx}:");
-		match content {
-			MessageContent::Text(text) => {
+
+	// Iterate through the parts
+	for (part_idx, part) in parts.iter().enumerate() {
+		println!("   Response Part #{part_idx}:");
+		match part {
+			ContentPart::Text(text) => {
 				println!("      Text: {text}");
 			}
-			MessageContent::Parts(parts) => {
-				for (part_idx, part) in parts.iter().enumerate() {
-					match part {
-						genai::chat::ContentPart::Text(text) => {
-							println!("      Part #{part_idx} Text: {text}");
-						}
-						genai::chat::ContentPart::Image { content_type, source } => {
-							println!("      Part #{part_idx} Image - MimeType: {content_type}");
-							if let genai::chat::MediaSource::Base64(b64_data) = source {
-								save_image_bytes(
-									"conversational_img",
-									content_idx * 100 + part_idx, // Unique index for multiple images/contents
-									b64_data,
-								)?;
-								image_found = true;
-							}
-						}
-						genai::chat::ContentPart::Document { .. } => {
-							println!("      Part #{part_idx} Document - Skipped for image tests");
-						}
-					}
+			ContentPart::Binary(binary) => {
+				println!("      Binary - MimeType: {:?}", binary.content_type);
+				if let BinarySource::Base64(b64_data) = &binary.source {
+					save_image_bytes(
+						"conversational_img",
+						part_idx,
+						b64_data,
+					)?;
+					image_found = true;
 				}
 			}
-			_ => {
-				println!("      Unexpected content type: {content:?}");
+			ContentPart::ToolCall(_) => {
+				println!("      Part #{part_idx} ToolCall - Skipped for image tests");
+			}
+			ContentPart::ToolResponse(_) => {
+				println!("      Part #{part_idx} ToolResponse - Skipped for image tests");
 			}
 		}
 	}
