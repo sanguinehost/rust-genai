@@ -534,6 +534,12 @@ impl ChatOptionsSet<'_, '_> {
 			.or_else(|| self.client.and_then(|client| client.reasoning_effort.as_ref()))
 	}
 
+	pub fn include_thoughts(&self) -> Option<bool> {
+		self.chat
+			.and_then(|chat| chat.include_thoughts)
+			.or_else(|| self.client.and_then(|client| client.include_thoughts))
+	}
+
 	pub fn verbosity(&self) -> Option<&Verbosity> {
 		self.chat
 			.and_then(|chat| chat.verbosity.as_ref())

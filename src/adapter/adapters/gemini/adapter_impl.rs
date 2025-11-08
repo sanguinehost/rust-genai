@@ -17,10 +17,20 @@ pub struct GeminiAdapter;
 
 // Note: Those model names are just informative, as the Gemini AdapterKind is selected on `startsWith("gemini")`
 const MODELS: &[&str] = &[
-	//
+	// Latest GA models
 	"gemini-2.5-pro",
 	"gemini-2.5-flash",
 	"gemini-2.5-flash-lite",
+
+	// Preview models (09-2025)
+	"gemini-2.5-flash-preview-09-2025",
+	"gemini-2.5-flash-lite-preview-09-2025",
+
+	// Specialized models
+	"gemini-2.5-flash-image",
+	"gemini-2.0-flash-preview-image-generation",
+	"imagen-3.0-generate-002",
+	"veo-2.0-generate-001",
 ];
 
 // Per gemini doc (https://x.com/jeremychone/status/1916501987371438372)
@@ -62,6 +72,8 @@ impl Adapter for GeminiAdapter {
 			ServiceType::Chat => format!("{base_url}models/{model_name}:generateContent"),
 			ServiceType::ChatStream => format!("{base_url}models/{model_name}:streamGenerateContent"),
 			ServiceType::Embed => format!("{base_url}models/{model_name}:embedContent"), // Gemini embeddings API
+			ServiceType::ImageGenerationImagen => format!("{base_url}models/{model_name}:predict"),
+			ServiceType::VideoGenerationVeo => format!("{base_url}models/{model_name}:predictLongRunning"),
 		};
 		Ok(url)
 	}
@@ -131,6 +143,11 @@ impl Adapter for GeminiAdapter {
 		// -- Set the reasoning effort
 		if let Some(budget) = reasoning_budget {
 			payload.x_insert("/generationConfig/thinkingConfig/thinkingBudget", budget)?;
+		}
+
+		// -- Set includeThoughts if requested
+		if options_set.include_thoughts().is_some_and(|v| v) {
+			payload.x_insert("/generationConfig/thinkingConfig/includeThoughts", true)?;
 		}
 
 		// Note: It's unclear from the spec if the content of systemInstruction should have a role.

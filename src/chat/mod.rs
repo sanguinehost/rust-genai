@@ -13,6 +13,8 @@ mod content_part;
 mod message_content;
 mod tool;
 mod usage;
+mod imagen_types;
+mod veo_types;
 
 // -- Flatten
 pub use chat_message::*;
@@ -25,6 +27,8 @@ pub use content_part::*;
 pub use message_content::*;
 pub use tool::*;
 pub use usage::*;
+pub use imagen_types::*;
+pub use veo_types::*;
 
 #[doc = "Printing helpers for chat requests and streaming output."]
 pub mod printer;

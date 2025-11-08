@@ -68,6 +68,9 @@ impl Adapter for AnthropicAdapter {
 		let url = match service_type {
 			ServiceType::Chat | ServiceType::ChatStream => format!("{base_url}messages"),
 			ServiceType::Embed => format!("{base_url}embeddings"), // Anthropic doesn't support embeddings yet
+			ServiceType::ImageGenerationImagen | ServiceType::VideoGenerationVeo => {
+				unreachable!("Image/Video generation not supported by this adapter")
+			}
 		};
 
 		Ok(url)

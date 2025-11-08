@@ -51,6 +51,9 @@ impl Adapter for CohereAdapter {
 				let base_without_version = base_url.trim_end_matches("v1/");
 				format!("{base_without_version}v2/embed")
 			}
+			ServiceType::ImageGenerationImagen | ServiceType::VideoGenerationVeo => {
+				unreachable!("Image/Video generation not supported by this adapter")
+			}
 		};
 		Ok(url)
 	}

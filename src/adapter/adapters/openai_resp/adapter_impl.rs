@@ -294,6 +294,9 @@ impl OpenAIRespAdapter {
 		let suffix = match service_type {
 			ServiceType::Chat | ServiceType::ChatStream => "responses",
 			ServiceType::Embed => "embeddings", // TODO: Probably needs to say not supported
+			ServiceType::ImageGenerationImagen | ServiceType::VideoGenerationVeo => {
+				unreachable!("Image/Video generation not supported by this adapter")
+			}
 		};
 		let mut full_url = base_url.join(suffix).map_err(|err| {
 			Error::Internal(format!(

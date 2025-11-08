@@ -67,6 +67,8 @@ pub enum ServiceType {
 	Chat,
 	ChatStream,
 	Embed,
+	ImageGenerationImagen, // For Imagen 3
+	VideoGenerationVeo,    // For Veo
 }
 
 // endregion: --- ServiceType

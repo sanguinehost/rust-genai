@@ -91,6 +91,9 @@ impl Adapter for ZaiAdapter {
 		let url = match service_type {
 			ServiceType::Chat | ServiceType::ChatStream => format!("{base_url}chat/completions"),
 			ServiceType::Embed => format!("{base_url}embeddings"),
+			ServiceType::ImageGenerationImagen | ServiceType::VideoGenerationVeo => {
+				unreachable!("Image/Video generation not supported by this adapter")
+			}
 		};
 		Ok(url)
 	}
