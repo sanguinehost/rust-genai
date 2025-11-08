@@ -37,7 +37,7 @@ impl ModelManager {
         MODEL_MANAGER
             .get_or_try_init(|| async {
                 let backend = LlamaBackend::init()
-                    .map_err(|e| Error::AdapterError(format!("Failed to initialize llama backend: {e}")))?;
+                    .map_err(|e| Error::Internal(format!("Failed to initialize llama backend: {e}")))?;
                 
                 Ok(Arc::new(ModelManager {
                     backend: Arc::new(backend),
@@ -60,7 +60,7 @@ impl ModelManager {
         // Check cache first
         {
             let models = self.models.read()
-                .map_err(|e| Error::AdapterError(format!("Failed to read models cache: {e}")))?;
+                .map_err(|e| Error::Internal(format!("Failed to read models cache: {e}")))?;
             
             if let Some(cached_model) = models.get(&path_str) {
                 return Ok(cached_model.clone());
@@ -73,7 +73,7 @@ impl ModelManager {
         // Cache the loaded model
         {
             let mut models = self.models.write()
-                .map_err(|e| Error::AdapterError(format!("Failed to write to models cache: {e}")))?;
+                .map_err(|e| Error::Internal(format!("Failed to write to models cache: {e}")))?;
             
             let loaded_model_arc = Arc::new(loaded_model);
             models.insert(path_str, loaded_model_arc.clone());
@@ -84,7 +84,7 @@ impl ModelManager {
     /// Internal method to actually load the model from disk
     async fn load_model_internal(&self, model_path: &Path) -> Result<LoadedModel> {
         if !model_path.exists() {
-            return Err(Error::AdapterError(
+            return Err(Error::Internal(
                 format!("Model file not found: {}", model_path.display())
             ));
         }
@@ -97,7 +97,7 @@ impl ModelManager {
         let model_path = model_path.to_owned();
         // Load model directly (llama.cpp types are not Send-safe)
         let model = LlamaModel::load_from_file(&backend, &model_path, &model_params)
-            .map_err(|e| Error::AdapterError(format!("Failed to load model: {e}")))?;
+            .map_err(|e| Error::Internal(format!("Failed to load model: {e}")))?;
 
         // Try to get the default chat template
         let chat_template = model.chat_template(None).ok();
@@ -112,7 +112,7 @@ impl ModelManager {
     /// Clear all cached models to free memory
     pub fn clear_cache(&self) -> Result<()> {
         let mut models = self.models.write()
-            .map_err(|e| Error::AdapterError(format!("Failed to clear models cache: {e}")))?;
+            .map_err(|e| Error::Internal(format!("Failed to clear models cache: {e}")))?;
         
         models.clear();
         Ok(())
@@ -121,7 +121,7 @@ impl ModelManager {
     /// Get the number of cached models
     pub fn cache_size(&self) -> Result<usize> {
         let models = self.models.read()
-            .map_err(|e| Error::AdapterError(format!("Failed to read models cache: {e}")))?;
+            .map_err(|e| Error::Internal(format!("Failed to read models cache: {e}")))?;
         
         Ok(models.len())
     }
@@ -172,7 +172,7 @@ pub fn resolve_model_path(model_name: &str, base_path: Option<&str>) -> Result<P
         }
     }
     
-    Err(Error::AdapterError(
+    Err(Error::Internal(
         format!("Could not resolve model path for: {model_name}")
     ))
 }

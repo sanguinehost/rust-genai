@@ -58,14 +58,14 @@ impl Stream for LlamaCppStreamer {
                 StreamChunk::Done => {
                     this.finished = true;
                     let end_event = InterStreamEnd {
-                        content: if this.buffer.is_empty() { None } else { Some(this.buffer.clone()) },
+                        captured_text_content: if this.buffer.is_empty() { None } else { Some(this.buffer.clone()) },
                         ..Default::default()
                     };
                     Poll::Ready(Some(Ok(InterStreamEvent::End(end_event))))
                 }
                 StreamChunk::Error(err) => {
                     this.finished = true;
-                    Poll::Ready(Some(Err(crate::Error::AdapterError(err))))
+                    Poll::Ready(Some(Err(crate::Error::Internal(err))))
                 }
             },
             Poll::Ready(None) => {

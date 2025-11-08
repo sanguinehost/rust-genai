@@ -296,30 +296,17 @@ fn apply_generic_template(messages: &[ChatMessage], tools: &[Tool]) -> Result<St
 
 /// Extract text content from MessageContent (helper function)
 fn extract_text_content(content: &crate::chat::MessageContent) -> Result<String> {
-    match content {
-        crate::chat::MessageContent::Text(text) => Ok(text.clone()),
-        crate::chat::MessageContent::Parts(parts) => {
-            let mut text_content = String::new();
-            for part in parts {
-                match part {
-                    crate::chat::ContentPart::Text(text) => {
-                        text_content.push_str(&text);
-                    }
-                    _ => {
-                        // Skip non-text parts for now
-                        // TODO: Handle image content for multimodal models
-                    }
-                }
-            }
-            Ok(text_content)
-        }
-        crate::chat::MessageContent::ToolCalls(_) => {
-            Ok("".to_string()) // Tool calls are handled separately
-        }
-        crate::chat::MessageContent::ToolResponses(_) => {
-            Ok("".to_string()) // Tool responses are handled separately
-        }
+    if content.contains_text() {
+        let texts = content.texts();
+        return Ok(texts.join("\n"));
     }
+    if content.contains_tool_call() {
+        return Ok("".to_string());
+    }
+    if content.contains_tool_response() {
+        return Ok("".to_string());
+    }
+    Ok("".to_string())
 }
 
 #[cfg(test)]
@@ -368,7 +355,7 @@ mod tests {
 
         let message = crate::chat::ChatMessage {
             role: ChatRole::User,
-            content: crate::chat::MessageContent::Text("What's the weather?".to_string()),
+            content: crate::chat::MessageContent::from_text("What's the weather?".to_string()),
             options: None,
         };
 

@@ -16,7 +16,7 @@ pub fn schema_to_gbnf(schema: &Value) -> Result<String> {
 /// Converts multiple tool schemas to a unified GBNF grammar for tool calling
 pub fn tools_to_gbnf(tools: &[crate::chat::Tool]) -> Result<String> {
     if tools.is_empty() {
-        return Err(Error::AdapterError("No tools provided for grammar generation".to_string()));
+        return Err(Error::Internal("No tools provided for grammar generation".to_string()));
     }
 
     let mut converter = GrammarConverter::new();
@@ -89,7 +89,7 @@ impl GrammarConverter {
     fn convert_value(&mut self, value: &Value, rule_name: &str) -> Result<String> {
         match value {
             Value::Object(obj) => self.convert_object(obj, rule_name),
-            _ => Err(Error::AdapterError("Schema must be an object".to_string())),
+            _ => Err(Error::Internal("Schema must be an object".to_string())),
         }
     }
 
@@ -104,7 +104,7 @@ impl GrammarConverter {
             "string" => Ok(self.convert_string_type(obj, rule_name)),
             "number" | "integer" => Ok(self.convert_number_type(rule_name)),
             "boolean" => Ok(self.convert_boolean_type(rule_name)),
-            _ => Err(Error::AdapterError(format!("Unsupported schema type: {}", schema_type))),
+            _ => Err(Error::Internal(format!("Unsupported schema type: {}", schema_type))),
         }
     }
 

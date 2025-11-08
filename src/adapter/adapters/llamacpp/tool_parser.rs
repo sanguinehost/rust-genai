@@ -70,7 +70,7 @@ fn parse_functionary_tools(text: &str, function_tag: &str) -> Result<Vec<ToolCal
     
     // Regex to match <function=function_name{...}>
     let pattern = format!(r"{}(\w+)(\{{.*?\}})", regex::escape(function_tag));
-    let re = Regex::new(&pattern).map_err(|e| Error::AdapterError(format!("Regex error: {}", e)))?;
+    let re = Regex::new(&pattern).map_err(|e| Error::Internal(format!("Regex error: {}", e)))?;
     
     for cap in re.captures_iter(text) {
         if let (Some(fn_name), Some(args)) = (cap.get(1), cap.get(2)) {
@@ -112,7 +112,7 @@ fn parse_hermes_tools(text: &str) -> Result<Vec<ToolCall>> {
     
     // Look for <tool_call>...</tool_call> tags
     let re = Regex::new(r"<tool_call>\s*(.*?)\s*</tool_call>")
-        .map_err(|e| Error::AdapterError(format!("Regex error: {}", e)))?;
+        .map_err(|e| Error::Internal(format!("Regex error: {}", e)))?;
     
     for cap in re.captures_iter(text) {
         if let Some(json_match) = cap.get(1) {
@@ -147,7 +147,7 @@ fn parse_generic_tools(text: &str) -> Result<Vec<ToolCall>> {
     
     // Look for ```json ... ``` blocks first
     let re = Regex::new(r"```json\s*(.*?)\s*```")
-        .map_err(|e| Error::AdapterError(format!("Regex error: {}", e)))?;
+        .map_err(|e| Error::Internal(format!("Regex error: {}", e)))?;
     
     let mut found_code_blocks = false;
     for cap in re.captures_iter(text) {
@@ -178,7 +178,7 @@ fn parse_generic_tools(text: &str) -> Result<Vec<ToolCall>> {
     // Only look for standalone JSON objects if no code blocks were found
     if !found_code_blocks {
         let json_re = Regex::new(r#"\{"name"\s*:\s*"[^"]+"\s*,\s*"arguments"\s*:\s*\{.*?\}\s*\}"#)
-            .map_err(|e| Error::AdapterError(format!("Regex error: {}", e)))?;
+            .map_err(|e| Error::Internal(format!("Regex error: {}", e)))?;
         
         for cap in json_re.captures_iter(text) {
             let json_str = cap.get(0).unwrap().as_str();
@@ -261,13 +261,13 @@ fn fix_json_issues(json_str: &str) -> Result<String> {
     
     // Fix unquoted keys (basic attempt)
     let key_re = Regex::new(r"(\w+):")
-        .map_err(|e| Error::AdapterError(format!("Regex error: {}", e)))?;
+        .map_err(|e| Error::Internal(format!("Regex error: {}", e)))?;
     fixed = key_re.replace_all(&fixed, "\"$1\":").to_string();
     
     // Fix unquoted values (look for unquoted strings after colons or in arrays)
     // Match pattern like: "key": unquoted_value
     let value_re = Regex::new(r#":\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*([,}\]])"#)
-        .map_err(|e| Error::AdapterError(format!("Regex error: {}", e)))?;
+        .map_err(|e| Error::Internal(format!("Regex error: {}", e)))?;
     fixed = value_re.replace_all(&fixed, ": \"$1\"$2").to_string();
     
     // Fix single quotes to double quotes
@@ -289,11 +289,11 @@ fn generate_call_id() -> String {
 /// Create MessageContent from tool calls and remaining text
 pub fn create_response_content(text: &str, tool_calls: Vec<ToolCall>) -> MessageContent {
     if tool_calls.is_empty() {
-        MessageContent::Text(text.to_string())
+        MessageContent::from_text(text.to_string())
     } else {
         // If we have tool calls, we might want to return them separately
         // For now, just return the tool calls
-        MessageContent::ToolCalls(tool_calls)
+        MessageContent::from_tool_calls(tool_calls)
     }
 }
 

@@ -1,6 +1,7 @@
 //! Core LlamaCpp adapter implementation for native local model inference.
 
 use std::num::NonZeroU32;
+use std::path::PathBuf;
 
 use llama_cpp_2::{
     context::{params::LlamaContextParams, LlamaContext},
@@ -42,7 +43,7 @@ impl GenerationOptions {
             max_tokens: options.max_tokens(),
             temperature: options.temperature(),
             top_p: options.top_p(),
-            seed: options.seed(),
+            seed: options.seed().map(|s| s as i32),
         }
     }
 }
@@ -73,9 +74,9 @@ impl Adapter for LlamaCppAdapter {
         ])
     }
 
-    fn get_service_url(_model: &ModelIden, _service_type: ServiceType, _endpoint: Endpoint) -> String {
+    fn get_service_url(_model: &ModelIden, _service_type: ServiceType, _endpoint: Endpoint) -> Result<String> {
         // Not used for native adapter - we load models directly from filesystem
-        String::new()
+        Ok(String::new())
     }
 
     fn to_web_request_data(
@@ -85,9 +86,10 @@ impl Adapter for LlamaCppAdapter {
         _chat_options: ChatOptionsSet<'_, '_>,
     ) -> Result<WebRequestData> {
         // Not used for native adapter
-        Err(Error::UnsupportedOperation(
-            "LlamaCpp adapter uses native execution, not web requests".to_string(),
-        ))
+        Err(Error::AdapterNotSupported {
+            adapter_kind: AdapterKind::LlamaCpp,
+            feature: "web requests (uses native execution)".to_string(),
+        })
     }
 
     fn to_chat_response(
@@ -96,9 +98,10 @@ impl Adapter for LlamaCppAdapter {
         _options_set: ChatOptionsSet<'_, '_>,
     ) -> Result<ChatResponse> {
         // Not used for native adapter
-        Err(Error::UnsupportedOperation(
-            "LlamaCpp adapter uses native execution, not web responses".to_string(),
-        ))
+        Err(Error::AdapterNotSupported {
+            adapter_kind: AdapterKind::LlamaCpp,
+            feature: "web responses (uses native execution)".to_string(),
+        })
     }
 
     fn to_chat_stream(
@@ -107,9 +110,34 @@ impl Adapter for LlamaCppAdapter {
         _options_set: ChatOptionsSet<'_, '_>,
     ) -> Result<ChatStreamResponse> {
         // Not used for native adapter
-        Err(Error::UnsupportedOperation(
-            "LlamaCpp adapter uses native streaming, not web streams".to_string(),
-        ))
+        Err(Error::AdapterNotSupported {
+            adapter_kind: AdapterKind::LlamaCpp,
+            feature: "web streams (uses native streaming)".to_string(),
+        })
+    }
+
+    fn to_embed_request_data(
+        _service_target: ServiceTarget,
+        _embed_req: crate::embed::EmbedRequest,
+        _options_set: crate::embed::EmbedOptionsSet<'_, '_>,
+    ) -> Result<WebRequestData> {
+        // Not used for native adapter
+        Err(Error::AdapterNotSupported {
+            adapter_kind: AdapterKind::LlamaCpp,
+            feature: "embeddings".to_string(),
+        })
+    }
+
+    fn to_embed_response(
+        _model_iden: ModelIden,
+        _web_response: WebResponse,
+        _options_set: crate::embed::EmbedOptionsSet<'_, '_>,
+    ) -> Result<crate::embed::EmbedResponse> {
+        // Not used for native adapter
+        Err(Error::AdapterNotSupported {
+            adapter_kind: AdapterKind::LlamaCpp,
+            feature: "embeddings".to_string(),
+        })
     }
 }
 
@@ -134,19 +162,22 @@ impl LlamaCppAdapter {
         options: ChatOptionsSet<'_, '_>,
     ) -> Result<ChatStreamResponse> {
         let (tx, stream_response) = create_streaming_channel(target.model.clone());
-        
+
         // Extract options that can be sent across thread boundaries
         let generation_options = GenerationOptions::from_options_set(&options);
-        
+
+        // Extract fields we need from target (ServiceTarget doesn't impl Clone)
+        let model_iden = target.model.clone();
+        let base_url = target.endpoint.base_url().to_string();
+
         // Since llama.cpp types are not Send, we'll generate in a blocking task
         // and then send the chunks
-        let target_clone = target.clone();
         let chat_req_clone = chat_req.clone();
         let tx_clone = tx.clone();
-        
+
         tokio::task::spawn_blocking(move || {
-            // Generate the response and send chunks 
-            match futures::executor::block_on(Self::generate_response_blocking(target_clone, chat_req_clone, generation_options, Some(tx_clone))) {
+            // Generate the response and send chunks
+            match futures::executor::block_on(Self::generate_response_blocking_with_data(model_iden, base_url, chat_req_clone, generation_options, Some(tx_clone))) {
                 Ok(_) => {
                     // Done is sent from within generate_response_blocking
                 }
@@ -168,7 +199,7 @@ impl LlamaCppAdapter {
     ) -> Result<ChatResponse> {
         // Generate the response
         let result = Self::generate_response(target, chat_req, options, stream_tx.clone()).await;
-        
+
         // Send done message for streaming
         if let Some(tx) = &stream_tx {
             match &result {
@@ -180,35 +211,62 @@ impl LlamaCppAdapter {
                 }
             }
         }
-        
+
         result
     }
 
-    /// Internal method to generate responses with optional streaming
-    async fn generate_response(
-        target: ServiceTarget,
+    /// Helper for streaming that doesn't require full ServiceTarget
+    async fn generate_response_blocking_with_data(
+        model_iden: ModelIden,
+        base_url: String,
         chat_req: ChatRequest,
         options: GenerationOptions,
         stream_tx: Option<mpsc::Sender<StreamChunk>>,
     ) -> Result<ChatResponse> {
         // Resolve model path
-        let base_path = if target.endpoint.base_url().starts_with("file://") {
-            Some(&target.endpoint.base_url()["file://".len()..])
+        let base_path = if base_url.starts_with("file://") {
+            Some(&base_url["file://".len()..])
         } else {
             None
         };
-        
-        let model_path = resolve_model_path(&target.model.model_name, base_path)?;
-        
+
+        let model_path = resolve_model_path(&model_iden.model_name, base_path)?;
+
+        // Generate the actual response
+        let result = Self::generate_with_model_path(&model_iden, model_path, chat_req, options, stream_tx.clone()).await;
+
+        // Send done message for streaming
+        if let Some(tx) = &stream_tx {
+            match &result {
+                Ok(_) => {
+                    let _ = tx.send(StreamChunk::Done).await;
+                }
+                Err(_) => {
+                    // Error already handled in the calling spawn_blocking
+                }
+            }
+        }
+
+        result
+    }
+
+    /// Core generation logic that doesn't depend on ServiceTarget
+    async fn generate_with_model_path(
+        model_iden: &ModelIden,
+        model_path: PathBuf,
+        chat_req: ChatRequest,
+        options: GenerationOptions,
+        stream_tx: Option<mpsc::Sender<StreamChunk>>,
+    ) -> Result<ChatResponse> {
         // Load model using ModelManager
         let model_manager = ModelManager::instance().await?;
         let loaded_model = model_manager.load_model(&model_path).await?;
         // Get backend from model manager
         let backend = model_manager.backend();
-        
+
         // Detect tool configuration for this model
-        let tool_config = detect_tool_config(&target.model.model_name);
-        
+        let tool_config = detect_tool_config(&model_iden.model_name);
+
         // Create prompt with tool support if tools are provided
         let prompt = if let Some(tools) = &chat_req.tools {
             if !tools.is_empty() && tool_config.supports_tools {
@@ -225,7 +283,7 @@ impl LlamaCppAdapter {
 
         // Create context for generation
         let mut context_params = LlamaContextParams::default();
-        
+
         // Configure context based on options
         if let Some(max_tokens) = options.max_tokens {
             // Set context size to accommodate input + output
@@ -234,19 +292,16 @@ impl LlamaCppAdapter {
                 context_params = context_params.with_n_ctx(Some(ctx_size));
             }
         }
-        
-        // Note: threads configuration would need to be added to ChatOptions
-        // For now, use default thread configuration
 
         // Create context (llama.cpp contexts cannot be safely sent between threads)
         let mut context = loaded_model.model
             .new_context(backend, context_params)
-            .map_err(|e| Error::AdapterError(format!("Failed to create context: {e}")))?;
+            .map_err(|e| Error::Internal(format!("Failed to create context: {e}")))?;
 
         // Tokenize prompt
         let tokens = loaded_model.model
             .str_to_token(&prompt, AddBos::Always)
-            .map_err(|e| Error::AdapterError(format!("Failed to tokenize prompt: {e}")))?;
+            .map_err(|e| Error::Internal(format!("Failed to tokenize prompt: {e}")))?;
 
         // Generate response
         let tokens_len = tokens.len();
@@ -264,37 +319,52 @@ impl LlamaCppAdapter {
         let content = if let Some(tools) = &chat_req.tools {
             if !tools.is_empty() && contains_tool_calls(&generated_text, &tool_config) {
                 // Try to parse tool calls from the generated text
-                match parse_tool_calls(&generated_text, &tool_config) {
-                    Ok(tool_calls) if !tool_calls.is_empty() => {
-                        // Return tool calls
-                        MessageContent::ToolCalls(tool_calls)
-                    }
-                    _ => {
-                        // No tool calls found, return text
-                        MessageContent::Text(generated_text)
-                    }
+                let tool_calls = parse_tool_calls(&generated_text, &tool_config)?;
+                if !tool_calls.is_empty() {
+                    MessageContent::from_tool_calls(tool_calls)
+                } else {
+                    MessageContent::from_text(generated_text)
                 }
             } else {
-                MessageContent::Text(generated_text)
+                MessageContent::from_text(generated_text)
             }
         } else {
-            MessageContent::Text(generated_text)
-        };
-
-        let usage = Usage {
-            prompt_tokens: Some(tokens_len as i32),
-            completion_tokens: None, // Could be calculated during generation
-            total_tokens: None,
-            ..Default::default()
+            MessageContent::from_text(generated_text)
         };
 
         Ok(ChatResponse {
-            contents: vec![content],
+            content,
             reasoning_content: None,
-            model_iden: target.model.clone(),
-            provider_model_iden: target.model,
-            usage,
+            model_iden: model_iden.clone(),
+            provider_model_iden: model_iden.clone(),
+            usage: crate::chat::Usage {
+                prompt_tokens: Some(tokens_len as i32),
+                completion_tokens: None,
+                total_tokens: None,
+                ..Default::default()
+            },
+            captured_raw_body: None,
         })
+    }
+
+    /// Internal method to generate responses with optional streaming
+    async fn generate_response(
+        target: ServiceTarget,
+        chat_req: ChatRequest,
+        options: GenerationOptions,
+        stream_tx: Option<mpsc::Sender<StreamChunk>>,
+    ) -> Result<ChatResponse> {
+        // Resolve model path
+        let base_path = if target.endpoint.base_url().starts_with("file://") {
+            Some(&target.endpoint.base_url()["file://".len()..])
+        } else {
+            None
+        };
+
+        let model_path = resolve_model_path(&target.model.model_name, base_path)?;
+
+        // Delegate to the core generation logic
+        Self::generate_with_model_path(&target.model, model_path, chat_req, options, stream_tx).await
     }
 
     /// Generate tokens using llama.cpp (synchronous because llama.cpp is not async)
@@ -318,12 +388,12 @@ impl LlamaCppAdapter {
         for (i, token) in (0_i32..).zip(input_tokens.into_iter()) {
             let is_last = i == last_index;
             batch.add(token, i, &[0], is_last)
-                .map_err(|e| Error::AdapterError(format!("Failed to add token to batch: {e}")))?;
+                .map_err(|e| Error::Internal(format!("Failed to add token to batch: {e}")))?;
         }
 
         // Process initial batch
         context.decode(&mut batch)
-            .map_err(|e| Error::AdapterError(format!("Failed to decode initial batch: {e}")))?;
+            .map_err(|e| Error::Internal(format!("Failed to decode initial batch: {e}")))?;
 
         // Prepare sampler
         let mut sampler = Self::create_sampler(options, model, tools, Some(tool_config))?;
@@ -345,7 +415,7 @@ impl LlamaCppAdapter {
 
             // Convert token to text
             let token_bytes = model.token_to_bytes(token, Special::Tokenize)
-                .map_err(|e| Error::AdapterError(format!("Failed to convert token to bytes: {e}")))?;
+                .map_err(|e| Error::Internal(format!("Failed to convert token to bytes: {e}")))?;
             
             let mut token_text = String::with_capacity(32);
             let _decode_result = decoder.decode_to_string(&token_bytes, &mut token_text, false);
@@ -363,11 +433,11 @@ impl LlamaCppAdapter {
             // Prepare for next iteration
             batch.clear();
             batch.add(token, n_cur as i32, &[0], true)
-                .map_err(|e| Error::AdapterError(format!("Failed to add token to batch: {e}")))?;
+                .map_err(|e| Error::Internal(format!("Failed to add token to batch: {e}")))?;
 
             // Decode next token
             context.decode(&mut batch)
-                .map_err(|e| Error::AdapterError(format!("Failed to decode batch: {e}")))?;
+                .map_err(|e| Error::Internal(format!("Failed to decode batch: {e}")))?;
 
             n_cur += 1;
 
@@ -396,7 +466,7 @@ impl LlamaCppAdapter {
             let content = Self::extract_text_content(&message.content)?;
             
             let llama_message = LlamaChatMessage::new(role.to_string(), content)
-                .map_err(|e| Error::AdapterError(format!("Failed to create chat message: {e}")))?;
+                .map_err(|e| Error::Internal(format!("Failed to create chat message: {e}")))?;
             
             llama_messages.push(llama_message);
         }
@@ -406,48 +476,42 @@ impl LlamaCppAdapter {
 
     /// Extract text content from MessageContent
     fn extract_text_content(content: &MessageContent) -> Result<String> {
-        match content {
-            MessageContent::Text(text) => Ok(text.clone()),
-            MessageContent::Parts(parts) => {
-                let mut text_content = String::new();
-                for part in parts {
-                    match part {
-                        crate::chat::ContentPart::Text(text) => {
-                            text_content.push_str(&text);
-                        }
-                        _ => {
-                            // Skip non-text parts for now
-                            // TODO: Handle image content for multimodal models
-                        }
-                    }
-                }
-                Ok(text_content)
-            }
-            MessageContent::ToolCalls(tool_calls) => {
-                // Convert tool calls back to text representation for the model
-                let mut text_content = String::new();
-                for tool_call in tool_calls {
-                    text_content.push_str(&format!(
-                        "Tool call: {} with arguments: {}\n",
-                        tool_call.fn_name,
-                        tool_call.fn_arguments
-                    ));
-                }
-                Ok(text_content)
-            }
-            MessageContent::ToolResponses(tool_responses) => {
-                // Convert tool responses to text
-                let mut text_content = String::new();
-                for response in tool_responses {
-                    text_content.push_str(&format!(
-                        "Tool response for {}: {}\n",
-                        response.call_id,
-                        response.content
-                    ));
-                }
-                Ok(text_content)
-            }
+        // First, try to get text content
+        if content.contains_text() {
+            let texts = content.texts();
+            return Ok(texts.join("\n"));
         }
+
+        // If there are tool calls, convert them to text representation
+        if content.contains_tool_call() {
+            let tool_calls = content.tool_calls();
+            let mut text_content = String::new();
+            for tool_call in tool_calls {
+                text_content.push_str(&format!(
+                    "Tool call: {} with arguments: {}\n",
+                    tool_call.fn_name,
+                    tool_call.fn_arguments
+                ));
+            }
+            return Ok(text_content);
+        }
+
+        // If there are tool responses, convert them to text
+        if content.contains_tool_response() {
+            let tool_responses = content.tool_responses();
+            let mut text_content = String::new();
+            for response in tool_responses {
+                text_content.push_str(&format!(
+                    "Tool response for {}: {}\n",
+                    response.call_id,
+                    response.content
+                ));
+            }
+            return Ok(text_content);
+        }
+
+        // If content is empty, return empty string
+        Ok(String::new())
     }
 
     /// Create regular prompt using chat template or simple format
@@ -459,7 +523,7 @@ impl LlamaCppAdapter {
         if let Some(template) = &loaded_model.chat_template {
             loaded_model.model
                 .apply_chat_template(template, &llama_messages, true)
-                .map_err(|e| Error::AdapterError(format!("Failed to apply chat template: {e}")))
+                .map_err(|e| Error::Internal(format!("Failed to apply chat template: {e}")))
         } else {
             // Fallback: create simple prompt format
             Ok(Self::create_simple_prompt(&llama_messages))
