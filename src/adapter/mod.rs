@@ -16,7 +16,9 @@ pub mod adapters;
 mod dispatcher;
 
 // -- Flatten (private, crate, public)
-use adapters::{anthropic, cohere, deepseek, gemini, groq, ollama, openai, xai};
+use adapters::{anthropic, cohere, deepseek, fireworks, gemini, groq, nebius, ollama, openai, openai_resp, together, xai, zai};
+#[cfg(feature = "llamacpp")]
+use adapters::llamacpp;
 
 pub(crate) use adapter_types::*;
 pub(crate) use dispatcher::*;
