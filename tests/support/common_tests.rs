@@ -304,6 +304,193 @@ Reply in a JSON format."#,
 	Ok(())
 }
 
+pub async fn common_test_chat_json_enum_ok(model: &str) -> TestResult<()> {
+	// -- Setup & Fixtures
+	let client = Client::default();
+	let chat_req = ChatRequest::new(vec![
+		ChatMessage::system("Analyze the sentiment of the user's feedback and provide a summary."),
+		ChatMessage::user("The new UI is incredibly intuitive and visually appealing. Great job!"),
+	]);
+
+	let json_schema = json!({
+		"type": "object",
+		"properties": {
+			"sentiment": {
+				"type": "string",
+				"enum": ["positive", "neutral", "negative"],
+				"description": "The overall sentiment of the feedback"
+			},
+			"confidence": {
+				"type": "integer",
+				"enum": [1, 2, 3, 4, 5],
+				"description": "Confidence level from 1-5"
+			},
+			"summary": {
+				"type": "string",
+				"description": "A brief summary of the feedback"
+			}
+		},
+		"required": ["sentiment", "confidence", "summary"]
+	});
+
+	let chat_options = ChatOptions::default().with_response_format(JsonSpec::new("sentiment-schema", json_schema));
+
+	// -- Exec
+	let chat_res = client.exec_chat(model, chat_req, Some(&chat_options)).await?;
+
+	// -- Check
+	let content = chat_res.into_first_text().ok_or("SHOULD HAVE CONTENT")?;
+	let json_response: serde_json::Value =
+		serde_json::from_str(&content).map_err(|err| format!("Was not valid JSON: {err}"))?;
+
+	// Verify enum fields
+	let sentiment: String = json_response.x_get("sentiment")?;
+	assert!(
+		["positive", "neutral", "negative"].contains(&sentiment.as_str()),
+		"Sentiment should be one of the enum values, got: {sentiment}"
+	);
+
+	let confidence: i64 = json_response.x_get("confidence")?;
+	assert!(
+		(1..=5).contains(&confidence),
+		"Confidence should be 1-5, got: {confidence}"
+	);
+
+	let summary: String = json_response.x_get("summary")?;
+	assert!(!summary.is_empty(), "Summary should not be empty");
+
+	Ok(())
+}
+
+pub async fn common_test_chat_json_format_ok(model: &str) -> TestResult<()> {
+	// -- Setup & Fixtures
+	let client = Client::default();
+	let chat_req = ChatRequest::new(vec![
+		ChatMessage::system("Extract structured date/time information from the user's event description."),
+		ChatMessage::user("I have a meeting on December 15, 2025 at 2:30 PM"),
+	]);
+
+	let json_schema = json!({
+		"type": "object",
+		"properties": {
+			"event_datetime": {
+				"type": "string",
+				"format": "date-time",
+				"description": "The full date and time in ISO 8601 format"
+			},
+			"event_date": {
+				"type": "string",
+				"format": "date",
+				"description": "Just the date portion in YYYY-MM-DD format"
+			},
+			"event_time": {
+				"type": "string",
+				"format": "time",
+				"description": "Just the time portion in HH:MM:SS format"
+			},
+			"description": {
+				"type": "string",
+				"description": "What the event is about"
+			}
+		},
+		"required": ["event_datetime", "event_date", "event_time", "description"]
+	});
+
+	let chat_options = ChatOptions::default().with_response_format(JsonSpec::new("event-schema", json_schema));
+
+	// -- Exec
+	let chat_res = client.exec_chat(model, chat_req, Some(&chat_options)).await?;
+
+	// -- Check
+	let content = chat_res.into_first_text().ok_or("SHOULD HAVE CONTENT")?;
+	let json_response: serde_json::Value =
+		serde_json::from_str(&content).map_err(|err| format!("Was not valid JSON: {err}"))?;
+
+	// Verify format fields exist and have some reasonable structure
+	let event_datetime: String = json_response.x_get("event_datetime")?;
+	assert!(event_datetime.contains("2025"), "Datetime should contain year 2025");
+	assert!(event_datetime.contains("T") || event_datetime.contains(" "), "Datetime should have date-time separator");
+
+	let event_date: String = json_response.x_get("event_date")?;
+	assert!(event_date.contains("2025") && event_date.contains("12") && event_date.contains("15"),
+		"Date should contain 2025-12-15");
+
+	let event_time: String = json_response.x_get("event_time")?;
+	assert!(event_time.contains(":"), "Time should contain colons");
+
+	let description: String = json_response.x_get("description")?;
+	assert!(!description.is_empty(), "Description should not be empty");
+
+	Ok(())
+}
+
+pub async fn common_test_chat_json_array_constraints_ok(model: &str) -> TestResult<()> {
+	// -- Setup & Fixtures
+	let client = Client::default();
+	let chat_req = ChatRequest::new(vec![
+		ChatMessage::system("Generate a product review with multiple pros (at least 2, max 5) and a rating between 1-10."),
+		ChatMessage::user("Review for a great wireless headphone"),
+	]);
+
+	let json_schema = json!({
+		"type": "object",
+		"properties": {
+			"product_name": {
+				"type": "string",
+				"description": "Name of the product"
+			},
+			"rating": {
+				"type": "integer",
+				"minimum": 1,
+				"maximum": 10,
+				"description": "Rating from 1 to 10"
+			},
+			"pros": {
+				"type": "array",
+				"items": { "type": "string" },
+				"minItems": 2,
+				"maxItems": 5,
+				"description": "List of pros (2-5 items)"
+			},
+			"cons": {
+				"type": "array",
+				"items": { "type": "string" },
+				"minItems": 1,
+				"maxItems": 3,
+				"description": "List of cons (1-3 items)"
+			}
+		},
+		"required": ["product_name", "rating", "pros", "cons"]
+	});
+
+	let chat_options = ChatOptions::default().with_response_format(JsonSpec::new("review-schema", json_schema));
+
+	// -- Exec
+	let chat_res = client.exec_chat(model, chat_req, Some(&chat_options)).await?;
+
+	// -- Check
+	let content = chat_res.into_first_text().ok_or("SHOULD HAVE CONTENT")?;
+	let json_response: serde_json::Value =
+		serde_json::from_str(&content).map_err(|err| format!("Was not valid JSON: {err}"))?;
+
+	// Verify constraints
+	let rating: i64 = json_response.x_get("rating")?;
+	assert!((1..=10).contains(&rating), "Rating should be 1-10, got: {rating}");
+
+	let pros: Vec<Value> = json_response.x_get("pros")?;
+	assert!(pros.len() >= 2 && pros.len() <= 5,
+		"Pros should have 2-5 items, got: {}", pros.len());
+
+	let cons: Vec<Value> = json_response.x_get("cons")?;
+	assert!(cons.len() >= 1 && cons.len() <= 3,
+		"Cons should have 1-3 items, got: {}", cons.len());
+
+	let product_name: String = json_response.x_get("product_name")?;
+	assert!(!product_name.is_empty(), "Product name should not be empty");
+
+	Ok(())
+}
+
 pub async fn common_test_chat_temperature_ok(model: &str) -> TestResult<()> {
 	// -- Setup & Fixtures
 	let client = Client::default();

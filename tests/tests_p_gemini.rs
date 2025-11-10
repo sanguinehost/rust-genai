@@ -32,6 +32,21 @@ async fn test_chat_json_structured_ok() -> TestResult<()> {
 }
 
 #[tokio::test]
+async fn test_chat_json_enum_ok() -> TestResult<()> {
+	common_tests::common_test_chat_json_enum_ok(MODEL).await
+}
+
+#[tokio::test]
+async fn test_chat_json_format_ok() -> TestResult<()> {
+	common_tests::common_test_chat_json_format_ok(MODEL).await
+}
+
+#[tokio::test]
+async fn test_chat_json_array_constraints_ok() -> TestResult<()> {
+	common_tests::common_test_chat_json_array_constraints_ok(MODEL).await
+}
+
+#[tokio::test]
 async fn test_chat_temperature_ok() -> TestResult<()> {
 	common_tests::common_test_chat_temperature_ok(MODEL).await
 }

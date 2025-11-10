@@ -38,7 +38,11 @@ const MODELS: &[&str] = &[
 	"imagen-3.0-generate-002",        // Imagen 3
 
 	// Veo models
-	"veo-2.0-generate-001",
+	"veo-3.1-generate-preview",      // Veo 3.1 Standard (latest, with audio, advanced features)
+	"veo-3.1-fast-generate-preview", // Veo 3.1 Fast
+	"veo-3.0-generate-001",          // Veo 3 Standard (with audio)
+	"veo-3.0-fast-generate-001",     // Veo 3 Fast
+	"veo-2.0-generate-001",          // Veo 2 (silent only, deprecated)
 ];
 
 // Per gemini doc (https://x.com/jeremychone/status/1916501987371438372)
@@ -175,20 +179,35 @@ impl Adapter for GeminiAdapter {
 			payload.x_insert("tools", tools)?;
 		}
 
-		// -- Response Format
+		// -- Response Format (Structured Outputs)
+		// See: https://ai.google.dev/gemini-api/docs/structured-output
+		//
+		// Gemini supports full structured outputs with JSON Schema validation.
+		// Supported JSON Schema features:
+		// - Types: string, number, integer, boolean, object, array, null
+		// - String formats: date-time, date, time
+		// - String/number enums for classification
+		// - Object: properties, required, additionalProperties
+		// - Array: items, prefixItems, minItems, maxItems
+		// - Number/integer: minimum, maximum, enum
+		// - Descriptive: title, description
+		//
+		// Note: Gemini does NOT support the `additionalProperties` field in schemas,
+		// so we remove it before sending. This is different from OpenAI which sets
+		// `additionalProperties: false` explicitly.
 		if let Some(ChatResponseFormat::JsonSpec(st_json)) = options_set.response_format() {
-			// x_insert
-			//     responseMimeType: "application/json",
-			// responseSchema: {
 			payload.x_insert("/generationConfig/responseMimeType", "application/json")?;
 			let mut schema = st_json.schema.clone();
+
+			// Remove `additionalProperties` as Gemini doesn't accept it
 			schema.x_walk(|parent_map, name| {
 				if name == "additionalProperties" {
 					parent_map.remove("additionalProperties");
 				}
 				true
 			});
-			payload.x_insert("/generationConfig/responseSchema", schema)?;
+
+			payload.x_insert("/generationConfig/responseJsonSchema", schema)?;
 		}
 
 		// -- Add supported ChatOptions
