@@ -2,7 +2,7 @@ mod support;
 
 use crate::support::{Check, TestResult, common_tests};
 
-// "gemini-2.5-flash", "gemini-2.5-pro-preview"
+// "gemini-2.5-flash", "gemini-2.5-pro-preview", "gemini-3-pro-preview"
 const MODEL: &str = "gemini-2.5-flash"; // can add "-medium" .. suffix
 
 // NOTE: For now just single test to make sure reasoning token get captured.
