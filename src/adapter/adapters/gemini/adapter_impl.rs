@@ -106,38 +106,45 @@ impl Adapter for GeminiAdapter {
 		// -- headers (empty for gemini)
 		let headers = Headers::from(("x-goog-api-key".to_string(), api_key.to_string()));
 
-		// -- Reasoning Budget
-		let (provider_model_name, reasoning_budget) = match (model_name, options_set.reasoning_effort()) {
-			// No explicity reasoning_effor, try to infer from model name suffix (supports -zero)
-			(model, None) => {
-				// let model_name: &str = &model.model_name;
-				if let Some((prefix, last)) = model_name.rsplit_once('-') {
-					let reasoning = match last {
-						"zero" => Some(REASONING_ZERO),
-						"low" => Some(REASONING_LOW),
-						"medium" => Some(REASONING_MEDIUM),
-						"high" => Some(REASONING_HIGH),
-						_ => None,
-					};
-					// create the model name if there was a `-..` reasoning suffix
-					let model = if reasoning.is_some() { prefix } else { model };
-
-					(model, reasoning)
-				} else {
-					(model, None)
-				}
-			}
-			// If reasoning effort, turn the low, medium, budget ones into Budget
-			(model, Some(effort)) => {
-				let effort = match effort {
-					// -- for now, match minimal to Low (because zero is not supported by 2.5 pro)
-					ReasoningEffort::Minimal => REASONING_LOW,
-					ReasoningEffort::Low => REASONING_LOW,
-					ReasoningEffort::Medium => REASONING_MEDIUM,
-					ReasoningEffort::High => REASONING_HIGH,
-					ReasoningEffort::Budget(budget) => *budget,
+		// -- Reasoning Budget / Thinking Level
+		// For Gemini 3, we prefer thinking_level over reasoning_effort for better control
+		let (provider_model_name_str, thinking_config) = if let Some(thinking_level) = options_set.thinking_level() {
+			// Gemini 3 thinking_level takes precedence
+			let thinking_level_str = match thinking_level {
+				crate::chat::ThinkingLevel::Low => "low",
+				crate::chat::ThinkingLevel::Medium => "medium",
+				crate::chat::ThinkingLevel::High => "high",
+			};
+			(model_name, Some(("thinking_level".to_string(), serde_json::Value::String(thinking_level_str.to_string()))))
+		} else if let Some(reasoning_effort) = options_set.reasoning_effort() {
+			// Legacy reasoning_effort support for backward compatibility
+			let reasoning = match reasoning_effort {
+				ReasoningEffort::Minimal => REASONING_LOW,
+				ReasoningEffort::Low => REASONING_LOW,
+				ReasoningEffort::Medium => REASONING_MEDIUM,
+				ReasoningEffort::High => REASONING_HIGH,
+				ReasoningEffort::Budget(budget) => *budget,
+			};
+			(model_name, Some(("thinkingBudget".to_string(), serde_json::Value::Number(serde_json::Number::from(reasoning)))))
+		} else {
+			// No explicit reasoning effort, try to infer from model name suffix (supports -zero)
+			if let Some((prefix, last)) = model_name.rsplit_once('-') {
+				let reasoning = match last {
+					"zero" => Some(REASONING_ZERO),
+					"low" => Some(REASONING_LOW),
+					"medium" => Some(REASONING_MEDIUM),
+					"high" => Some(REASONING_HIGH),
+					_ => None,
 				};
-				(model, Some(effort))
+				// create the model name if there was a `-..` reasoning suffix
+				let trimmed_model_name = if reasoning.is_some() { prefix } else { model_name };
+				if let Some(reasoning) = reasoning {
+					(trimmed_model_name, Some(("thinkingBudget".to_string(), serde_json::Value::Number(serde_json::Number::from(reasoning)))))
+				} else {
+					(trimmed_model_name, None)
+				}
+			} else {
+				(model_name, None)
 			}
 		};
 
@@ -153,9 +160,13 @@ impl Adapter for GeminiAdapter {
 			"contents": contents,
 		});
 
-		// -- Set the reasoning effort
-		if let Some(budget) = reasoning_budget {
-			payload.x_insert("/generationConfig/thinkingConfig/thinkingBudget", budget)?;
+		// -- Set the thinking configuration (thinking_level or thinkingBudget)
+		if let Some((param_name, param_value)) = thinking_config {
+			if param_name == "thinking_level" {
+				payload.x_insert("/generationConfig/thinkingConfig/thinkingLevel", param_value)?;
+			} else {
+				payload.x_insert("/generationConfig/thinkingConfig/thinkingBudget", param_value)?;
+			}
 		}
 
 		// -- Set includeThoughts if requested
@@ -213,6 +224,13 @@ impl Adapter for GeminiAdapter {
 
 		// -- Add supported ChatOptions
 		if let Some(temperature) = options_set.temperature() {
+			// For Gemini 3, warn about low temperatures as they can cause looping/degraded performance
+			if model_name.starts_with("gemini-3") && temperature < 0.7 {
+				tracing::warn!(
+					"Low temperature ({}) detected for Gemini 3 model '{}'. This may cause unexpected behavior such as looping or degraded performance. Consider using the default temperature of 1.0 for optimal performance.",
+					temperature, model_name
+				);
+			}
 			payload.x_insert("/generationConfig/temperature", temperature)?;
 		}
 
@@ -231,8 +249,18 @@ impl Adapter for GeminiAdapter {
 			payload.x_insert("/generationConfig/responseModalities", response_modalities)?;
 		}
 
+		// -- Media Resolution (Gemini 3 specific)
+		if let Some(media_resolution) = options_set.media_resolution() {
+			let resolution_str = match media_resolution {
+				crate::chat::MediaResolution::Low => "media_resolution_low",
+				crate::chat::MediaResolution::Medium => "media_resolution_medium",
+				crate::chat::MediaResolution::High => "media_resolution_high",
+			};
+			payload.x_insert("/generationConfig/mediaResolution", resolution_str)?;
+		}
+
 		// -- url
-		let provider_model = model.from_name(provider_model_name);
+		let provider_model = model.from_name(provider_model_name_str);
 		let url = Self::get_service_url(&provider_model, service_type, endpoint)?;
 
 		Ok(WebRequestData { url, headers, payload })
@@ -629,11 +657,15 @@ impl GeminiAdapter {
 		for mut part in parts {
 			// -- Capture eventual function call
 			if let Ok(fn_call_value) = part.x_take::<Value>("functionCall") {
+				// Capture thought signature if present (Gemini 3 specific)
+				let thought_signature = fn_call_value.x_get::<String>("thoughtSignature").ok();
+
 				let tool_call = ToolCall {
 					// NOTE: Gemini does not have call_id so, use name
 					call_id: fn_call_value.x_get("name").unwrap_or("".to_string()), // TODO: Handle this, gemini does not return the call_id
 					fn_name: fn_call_value.x_get("name").unwrap_or("".to_string()),
 					fn_arguments: fn_call_value.x_get("args").unwrap_or(Value::Null),
+					thought_signature,
 				};
 				content.push(GeminiChatContent::ToolCall(tool_call))
 			}
@@ -787,11 +819,18 @@ impl GeminiAdapter {
 								}
 							}
 							ContentPart::ToolCall(tool_call) => {
+								let mut function_call = json!({
+									"name": tool_call.fn_name,
+									"args": tool_call.fn_arguments,
+								});
+
+								// Include thought signature if present (Gemini 3 specific)
+								if let Some(signature) = &tool_call.thought_signature {
+									function_call["thoughtSignature"] = Value::String(signature.clone());
+								}
+
 								parts_values.push(json!({
-									"functionCall": {
-										"name": tool_call.fn_name,
-										"args": tool_call.fn_arguments,
-									}
+									"functionCall": function_call
 								}));
 							}
 							ContentPart::ToolResponse(tool_response) => {
@@ -816,11 +855,18 @@ impl GeminiAdapter {
 						match part {
 							ContentPart::Text(text) => parts_values.push(json!({"text": text})),
 							ContentPart::ToolCall(tool_call) => {
+								let mut function_call = json!({
+									"name": tool_call.fn_name,
+									"args": tool_call.fn_arguments,
+								});
+
+								// Include thought signature if present (Gemini 3 specific)
+								if let Some(signature) = &tool_call.thought_signature {
+									function_call["thoughtSignature"] = Value::String(signature.clone());
+								}
+
 								parts_values.push(json!({
-									"functionCall": {
-										"name": tool_call.fn_name,
-										"args": tool_call.fn_arguments,
-									}
+									"functionCall": function_call
 								}));
 							}
 							// Ignore unsupported parts for Assistant role
@@ -837,11 +883,18 @@ impl GeminiAdapter {
 					for part in msg.content {
 						match part {
 							ContentPart::ToolCall(tool_call) => {
+								let mut function_call = json!({
+									"name": tool_call.fn_name,
+									"args": tool_call.fn_arguments,
+								});
+
+								// Include thought signature if present (Gemini 3 specific)
+								if let Some(signature) = &tool_call.thought_signature {
+									function_call["thoughtSignature"] = Value::String(signature.clone());
+								}
+
 								parts_values.push(json!({
-									"functionCall": {
-										"name": tool_call.fn_name,
-										"args": tool_call.fn_arguments,
-									}
+									"functionCall": function_call
 								}));
 							}
 							ContentPart::ToolResponse(tool_response) => {

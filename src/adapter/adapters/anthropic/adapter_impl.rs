@@ -255,6 +255,7 @@ impl Adapter for AnthropicAdapter {
 						call_id,
 						fn_name,
 						fn_arguments,
+						thought_signature: None, // Not supported by Anthropic
 					};
 
 					let part = ContentPart::ToolCall(tool_call);

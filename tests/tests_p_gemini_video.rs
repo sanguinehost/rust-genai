@@ -27,8 +27,8 @@ use std::io::Write;
 use std::time::{Duration, SystemTime};
 
 // --- Constants ---
-const MODEL_VEO: &str = "veo-2.0-generate-001";
-const MODEL_IMAGEN: &str = "imagen-3.0-generate-002"; // For image-to-video tests
+const MODEL_VEO: &str = "veo-3.1-fast-generate-preview"; // Veo 3.1 Fast (latest with audio)
+const MODEL_IMAGEN: &str = "imagen-4.0-fast-generate-001"; // For image-to-video tests (updated to Imagen 4 Fast)
 
 // --- Helpers ---
 
@@ -100,9 +100,9 @@ async fn test_veo_generate_text_to_video_ok() -> Result<(), String> {
 	let veo_req = VeoGenerateVideosRequest::new()
 		.with_prompt(prompt)
 		.with_aspect_ratio("16:9")
-		.with_person_generation("dont_allow")
+		// Note: personGeneration parameter removed - not supported in Veo 3.1
 		.with_number_of_videos(1)
-		.with_duration_seconds(5);
+		.with_duration_seconds(6); // Veo 3.1 supports 4s, 6s, or 8s
 
 	let initial_res = client
 		.exec_generate_videos_veo(model_name, veo_req)
@@ -206,7 +206,7 @@ async fn test_veo_generate_image_to_video_ok() -> Result<(), String> {
 		.with_image(generated_image.image_bytes, "image/png") // Assuming PNG as default for Imagen output
 		.with_aspect_ratio("16:9") // Veo only supports 16:9 and 9:16
 		.with_number_of_videos(1)
-		.with_duration_seconds(5);
+		.with_duration_seconds(6); // Veo 3.1 supports 4s, 6s, or 8s
 
 	let initial_res = client
 		.exec_generate_videos_veo(veo_model_name, veo_req)

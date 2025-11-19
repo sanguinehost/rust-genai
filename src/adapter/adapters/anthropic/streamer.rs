@@ -136,6 +136,7 @@ impl futures::Stream for AnthropicStreamer {
 										call_id: id,
 										fn_name: name,
 										fn_arguments: serde_json::from_str(&input)?,
+										thought_signature: None, // Not supported by Anthropic
 									};
 
 									// Add to the captured_tool_calls if chat options say so

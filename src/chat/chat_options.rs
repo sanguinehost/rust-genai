@@ -57,6 +57,9 @@ pub struct ChatOptions {
 	/// Preferred reasoning effort, when supported by the provider.
 	pub reasoning_effort: Option<ReasoningEffort>,
 
+	/// Gemini 3 thinking level (low/medium/high), when supported by the provider.
+	pub thinking_level: Option<ThinkingLevel>,
+
 	/// Verbosity (for OpenAI gpt-5),
 	pub verbosity: Option<Verbosity>,
 
@@ -101,6 +104,9 @@ pub struct ChatOptions {
 
 	/// (Gemini specific) If true, will include the thoughts in the response.
 	pub include_thoughts: Option<bool>,
+
+	/// (Gemini 3 specific) Media resolution for images/videos in multimodal content.
+	pub media_resolution: Option<MediaResolution>,
 }
 
 /// Chainable Setters
@@ -179,6 +185,18 @@ impl ChatOptions {
 	/// Sets the reasoning effort hint.
 	pub fn with_reasoning_effort(mut self, value: ReasoningEffort) -> Self {
 		self.reasoning_effort = Some(value);
+		self
+	}
+
+	/// Sets the Gemini 3 thinking level.
+	pub fn with_thinking_level(mut self, value: ThinkingLevel) -> Self {
+		self.thinking_level = Some(value);
+		self
+	}
+
+	/// Sets the Gemini 3 media resolution for multimodal content.
+	pub fn with_media_resolution(mut self, value: MediaResolution) -> Self {
+		self.media_resolution = Some(value);
 		self
 	}
 
@@ -304,6 +322,140 @@ impl std::str::FromStr for ReasoningEffort {
 }
 
 // endregion: --- ReasoningEffort
+
+// region:    --- ThinkingLevel
+
+/// Gemini 3 thinking level for controlling reasoning depth.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ThinkingLevel {
+	Low,
+	Medium,
+	High,
+}
+
+impl ThinkingLevel {
+	/// Returns the lowercase variant name.
+	pub fn variant_name(&self) -> &'static str {
+		match self {
+			ThinkingLevel::Low => "low",
+			ThinkingLevel::Medium => "medium",
+			ThinkingLevel::High => "high",
+		}
+	}
+
+	/// Returns the thinking level keyword.
+	pub fn as_keyword(&self) -> Option<&'static str> {
+		match self {
+			ThinkingLevel::Low => Some("low"),
+			ThinkingLevel::Medium => Some("medium"),
+			ThinkingLevel::High => Some("high"),
+		}
+	}
+
+	/// Parses a thinking level keyword.
+	pub fn from_keyword(name: &str) -> Option<Self> {
+		match name {
+			"low" => Some(ThinkingLevel::Low),
+			"medium" => Some(ThinkingLevel::Medium),
+			"high" => Some(ThinkingLevel::High),
+			_ => None,
+		}
+	}
+
+	/// If `model_name` ends with `-<thinking_level>`, returns the parsed thinking level and the trimmed name.
+	///
+	/// Returns `(thinking_level, trimmed_model_name)`.
+	pub fn from_model_name(model_name: &str) -> (Option<Self>, &str) {
+		if let Some((prefix, last)) = model_name.rsplit_once('-')
+			&& let Some(thinking_level) = ThinkingLevel::from_keyword(last)
+		{
+			return (Some(thinking_level), prefix);
+		}
+		(None, model_name)
+	}
+}
+
+impl std::fmt::Display for ThinkingLevel {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			ThinkingLevel::Low => write!(f, "low"),
+			ThinkingLevel::Medium => write!(f, "medium"),
+			ThinkingLevel::High => write!(f, "high"),
+		}
+	}
+}
+
+impl std::str::FromStr for ThinkingLevel {
+	type Err = Error;
+
+	/// Parses a thinking level keyword.
+	fn from_str(s: &str) -> Result<Self> {
+		Self::from_keyword(s).ok_or(Error::ThinkingLevelParsing { actual: s.to_string() })
+	}
+}
+
+// endregion: --- ThinkingLevel
+
+// region:    --- MediaResolution
+
+/// Gemini 3 media resolution for controlling multimodal content processing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum MediaResolution {
+	Low,
+	Medium,
+	High,
+}
+
+impl MediaResolution {
+	/// Returns the lowercase variant name with media_resolution_ prefix.
+	pub fn variant_name(&self) -> &'static str {
+		match self {
+			MediaResolution::Low => "media_resolution_low",
+			MediaResolution::Medium => "media_resolution_medium",
+			MediaResolution::High => "media_resolution_high",
+		}
+	}
+
+	/// Returns the media resolution keyword.
+	pub fn as_keyword(&self) -> Option<&'static str> {
+		match self {
+			MediaResolution::Low => Some("media_resolution_low"),
+			MediaResolution::Medium => Some("media_resolution_medium"),
+			MediaResolution::High => Some("media_resolution_high"),
+		}
+	}
+
+	/// Parses a media resolution keyword.
+	pub fn from_keyword(name: &str) -> Option<Self> {
+		match name {
+			"media_resolution_low" | "low" => Some(MediaResolution::Low),
+			"media_resolution_medium" | "medium" => Some(MediaResolution::Medium),
+			"media_resolution_high" | "high" => Some(MediaResolution::High),
+			_ => None,
+		}
+	}
+}
+
+impl std::fmt::Display for MediaResolution {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			MediaResolution::Low => write!(f, "media_resolution_low"),
+			MediaResolution::Medium => write!(f, "media_resolution_medium"),
+			MediaResolution::High => write!(f, "media_resolution_high"),
+		}
+	}
+}
+
+impl std::str::FromStr for MediaResolution {
+	type Err = Error;
+
+	/// Parses a media resolution keyword.
+	fn from_str(s: &str) -> Result<Self> {
+		Self::from_keyword(s).ok_or(Error::MediaResolutionParsing { actual: s.to_string() })
+	}
+}
+
+// endregion: --- MediaResolution
 
 // region:    --- Verbosity
 
@@ -539,10 +691,22 @@ impl ChatOptionsSet<'_, '_> {
 			.or_else(|| self.client.and_then(|client| client.reasoning_effort.as_ref()))
 	}
 
+	pub fn thinking_level(&self) -> Option<&ThinkingLevel> {
+		self.chat
+			.and_then(|chat| chat.thinking_level.as_ref())
+			.or_else(|| self.client.and_then(|client| client.thinking_level.as_ref()))
+	}
+
 	pub fn include_thoughts(&self) -> Option<bool> {
 		self.chat
 			.and_then(|chat| chat.include_thoughts)
 			.or_else(|| self.client.and_then(|client| client.include_thoughts))
+	}
+
+	pub fn media_resolution(&self) -> Option<&MediaResolution> {
+		self.chat
+			.and_then(|chat| chat.media_resolution.as_ref())
+			.or_else(|| self.client.and_then(|client| client.media_resolution.as_ref()))
 	}
 
 	pub fn response_modalities(&self) -> Option<&Vec<String>> {

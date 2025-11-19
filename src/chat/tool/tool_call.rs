@@ -14,4 +14,8 @@ pub struct ToolCall {
 	/// JSON arguments payload as provided by the model.
 	/// Kept as `serde_json::Value` so callers can deserialize into their own types.
 	pub fn_arguments: Value,
+
+	/// (Gemini 3 specific) Thought signature for maintaining reasoning context across API calls.
+	/// Required for multi-step function calling with Gemini 3 models.
+	pub thought_signature: Option<String>,
 }

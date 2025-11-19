@@ -36,6 +36,12 @@ pub enum Error {
 	#[display("Failed to parse reasoning. Actual: '{actual}'")]
 	ReasoningParsingError { actual: String },
 
+	#[display("Failed to parse thinking level. Actual: '{actual}'")]
+	ThinkingLevelParsing { actual: String },
+
+	#[display("Failed to parse media resolution. Actual: '{actual}'")]
+	MediaResolutionParsing { actual: String },
+
 	#[display("Failed to parse service tier. Actual: '{actual}'")]
 	ServiceTierParsing { actual: String },
 
