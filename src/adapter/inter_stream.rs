@@ -20,6 +20,7 @@ pub struct InterStreamEnd {
 
 	// When `ChatOptions..capture_tool_calls == true`
 	pub captured_tool_calls: Option<Vec<crate::chat::ToolCall>>,
+	pub captured_thought_signature: Option<String>,
 }
 
 /// Intermediary StreamEvent

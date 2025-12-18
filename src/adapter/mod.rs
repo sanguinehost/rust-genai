@@ -19,6 +19,8 @@ mod dispatcher;
 use adapters::{anthropic, cohere, deepseek, fireworks, gemini, groq, nebius, ollama, openai, openai_resp, xai};
 #[cfg(feature = "llamacpp")]
 use adapters::llamacpp;
+#[cfg(feature = "vertex")]
+use adapters::vertex;
 #[allow(unused_imports)]
 use adapters::{together, zai};
 

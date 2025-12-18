@@ -167,73 +167,90 @@ struct BuffResponse {
 /// - Then, each main JSON object (from the first `{` to the last `}`) will become a message
 /// - Main JSON object `,` delimiter will be skipped
 /// - The ending `]` will be sent as a `]` message as well.
-///
-/// IMPORTANT: Right now, it assumes each buff_string will contain the full main JSON object
-///            for each array item (which seems to be the case with Gemini).
-///            This probably needs to be made more robust later.
 fn new_with_pretty_json_array(
-	buff_string: String,
-	partial_message: &mut Option<String>,
+        buff_string: String,
+        partial_message: &mut Option<String>,
 ) -> Result<BuffResponse, crate::webc::Error> {
-	let buff_str = buff_string.trim();
+        let buff_str = buff_string.trim();
 
-	let mut messages: Vec<String> = Vec::new();
+        let mut messages: Vec<String> = Vec::new();
 
-	// -- Capture the array start/end and each eventual sub-object (assuming only one sub-object)
-	let (array_start, rest_str) = match buff_str.strip_prefix('[') {
-		Some(rest) => (Some("["), rest.trim()),
-		None => (None, buff_str),
-	};
+        // -- Capture the array start/end
+        let (array_start, rest_str) = match buff_str.strip_prefix('[') {
+                Some(rest) => (Some("["), rest.trim()),
+                None => (None, buff_str),
+        };
 
-	// Remove the eventual ',' prefix and suffix.
-	let rest_str = rest_str.strip_prefix(',').unwrap_or(rest_str);
-	let rest_str = rest_str.strip_suffix(',').unwrap_or(rest_str);
+        // Remove the eventual ',' prefix.
+        let rest_str = rest_str.strip_prefix(',').unwrap_or(rest_str).trim();
 
-	let (rest_str, array_end) = match rest_str.strip_suffix(']') {
-		Some(rest) => (rest.trim(), Some("]")),
-		None => (rest_str, None),
-	};
+        // Handle array end
+        let (rest_str, array_end) = match rest_str.strip_suffix(']') {
+                Some(rest) => (rest.trim(), Some("]")),
+                None => (rest_str, None),
+        };
 
-	// -- Prep the BuffResponse
-	if let Some(array_start) = array_start {
-		messages.push(array_start.to_string());
-	}
-	if !rest_str.is_empty() {
-		let full_str = if let Some(partial) = partial_message.take() {
-			format!("{partial}{rest_str}")
-		} else {
-			rest_str.to_string()
-		};
+        // Remove trailing comma if present before the ]
+        let rest_str = rest_str.strip_suffix(',').unwrap_or(rest_str).trim();
 
-		if serde_json::from_str::<serde_json::Value>(&full_str).is_ok() {
-			messages.push(full_str);
-		} else {
-			*partial_message = Some(full_str);
-		}
-	}
-	// We ignore the comma
-	if let Some(array_end) = array_end {
-		messages.push(array_end.to_string());
-	}
+        if let Some(array_start) = array_start {
+                messages.push(array_start.to_string());
+        }
 
-	// -- Return the buff response
-	let first_message = if !messages.is_empty() {
-		Some(messages[0].to_string())
-	} else {
-		None
-	};
+        let full_str = if let Some(partial) = partial_message.take() {
+                format!("{partial}{rest_str}")
+        } else {
+                rest_str.to_string()
+        };
 
-	let next_messages = if messages.len() > 1 {
-		Some(messages[1..].to_vec())
-	} else {
-		None
-	};
+        if !full_str.is_empty() {
+             let mut cursor = full_str.as_str();
+             loop {
+                 cursor = cursor.trim_start_matches(|c| c == ',' || c == '\n' || c == ' ' || c == '\t');
+                 if cursor.is_empty() {
+                     break;
+                 }
 
-	Ok(BuffResponse {
-		first_message,
-		next_messages,
-		candidate_message: partial_message.take(),
-	})
+                 let mut stream = serde_json::Deserializer::from_str(cursor).into_iter::<serde_json::Value>();
+                 match stream.next() {
+                     Some(Ok(val)) => {
+                         messages.push(val.to_string());
+                         let offset = stream.byte_offset();
+                         cursor = &cursor[offset..];
+                     },
+                     Some(Err(_)) => {
+                         *partial_message = Some(cursor.to_string());
+                         break;
+                     }
+                     None => {
+                         break;
+                     }
+                 }
+             }
+        }
+
+        if let Some(array_end) = array_end {
+                messages.push(array_end.to_string());
+        }
+
+        // -- Return the buff response
+        let first_message = if !messages.is_empty() {
+                Some(messages[0].to_string())
+        } else {
+                None
+        };
+
+        let next_messages = if messages.len() > 1 {
+                Some(messages[1..].to_vec())
+        } else {
+                None
+        };
+
+        Ok(BuffResponse {
+                first_message,
+                next_messages,
+                candidate_message: partial_message.take(),
+        })
 }
 
 /// Process a string buffer for the delimited mode (e.g., Cohere)

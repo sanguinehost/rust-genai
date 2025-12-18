@@ -394,6 +394,7 @@ impl AnthropicAdapter {
 						let mut values: Vec<Value> = Vec::new();
 						for part in msg.content {
 							match part {
+							ContentPart::ThoughtSignature(_) => {},
 								ContentPart::Text(text) => {
 									values.push(json!({"type": "text", "text": text}));
 								}
@@ -470,6 +471,7 @@ impl AnthropicAdapter {
 
 					for part in msg.content {
 						match part {
+							ContentPart::ThoughtSignature(_) => {},
 							ContentPart::Text(text) => {
 								has_text = true;
 								values.push(json!({"type": "text", "text": text}));

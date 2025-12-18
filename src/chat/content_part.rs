@@ -21,6 +21,8 @@ pub enum ContentPart {
 
 	#[from]
 	ToolResponse(ToolResponse),
+
+	ThoughtSignature(String),
 }
 
 /// Constructors
@@ -129,6 +131,25 @@ impl ContentPart {
 	}
 
 	// into_binary implemented below
+	
+	/// Borrow the thought signature if present.
+	pub fn as_thought_signature(&self) -> Option<&str> {
+		if let ContentPart::ThoughtSignature(sig) = self {
+			Some(sig.as_str())
+		} else {
+			None
+		}
+	}
+
+	/// Extract the thought signature, consuming the part.
+	pub fn into_thought_signature(self) -> Option<String> {
+		if let ContentPart::ThoughtSignature(sig) = self {
+			Some(sig)
+		} else {
+			None
+		}
+	}
+    
 	pub fn into_binary(self) -> Option<Binary> {
 		if let ContentPart::Binary(binary) = self {
 			Some(binary)
@@ -168,6 +189,12 @@ impl ContentPart {
 	}
 
 	/// Returns true if this part contains a tool response.
+	
+	/// Returns true if this part is a thought signature.
+	pub fn is_thought_signature(&self) -> bool {
+		matches!(self, ContentPart::ThoughtSignature(_))
+	}
+    
 	pub fn is_tool_response(&self) -> bool {
 		matches!(self, ContentPart::ToolResponse(_))
 	}

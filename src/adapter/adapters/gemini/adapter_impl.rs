@@ -108,15 +108,30 @@ impl Adapter for GeminiAdapter {
 		let headers = Headers::from(("x-goog-api-key".to_string(), api_key.to_string()));
 
 		// -- Reasoning Budget / Thinking Level
-		// For Gemini 3, we prefer thinking_level over reasoning_effort for better control
+		// For Gemini 3, we use thinkingLevel (minimal/low/medium/high)
+		// For Gemini 2.5, we use thinkingBudget (0 = off, -1 = dynamic, or specific token count)
+		// ThinkingLevel::None maps to thinkingBudget: 0 (only works for 2.5 models)
 		let (provider_model_name_str, thinking_config) = if let Some(thinking_level) = options_set.thinking_level() {
-			// Gemini 3 thinking_level takes precedence
-			let thinking_level_str = match thinking_level {
-				crate::chat::ThinkingLevel::Low => "low",
-				crate::chat::ThinkingLevel::Medium => "medium",
-				crate::chat::ThinkingLevel::High => "high",
-			};
-			(model_name, Some(("thinking_level".to_string(), serde_json::Value::String(thinking_level_str.to_string()))))
+			match thinking_level {
+				crate::chat::ThinkingLevel::None => {
+					// Disable thinking entirely via thinkingBudget: 0 (Gemini 2.5 only)
+					// For Gemini 3, use Minimal instead as None is not supported
+					(model_name, Some(("thinkingBudget".to_string(), serde_json::Value::Number(serde_json::Number::from(REASONING_ZERO)))))
+				}
+				_ => {
+					// All other levels use thinkingLevel string (works for Gemini 3)
+					// Gemini 3 Pro: low, high
+					// Gemini 3 Flash: minimal, low, medium, high
+					let thinking_level_str = match thinking_level {
+						crate::chat::ThinkingLevel::Minimal => "minimal",
+						crate::chat::ThinkingLevel::Low => "low",
+						crate::chat::ThinkingLevel::Medium => "medium",
+						crate::chat::ThinkingLevel::High => "high",
+						crate::chat::ThinkingLevel::None => unreachable!(), // handled above
+					};
+					(model_name, Some(("thinkingLevel".to_string(), serde_json::Value::String(thinking_level_str.to_string()))))
+				}
+			}
 		} else if let Some(reasoning_effort) = options_set.reasoning_effort() {
 			// Legacy reasoning_effort support for backward compatibility
 			let reasoning = match reasoning_effort {
@@ -208,19 +223,25 @@ impl Adapter for GeminiAdapter {
 		// Note: Gemini does NOT support the `additionalProperties` field in schemas,
 		// so we remove it before sending. This is different from OpenAI which sets
 		// `additionalProperties: false` explicitly.
-		if let Some(ChatResponseFormat::JsonSpec(st_json)) = options_set.response_format() {
-			payload.x_insert("/generationConfig/responseMimeType", "application/json")?;
-			let mut schema = st_json.schema.clone();
+		match options_set.response_format() {
+			Some(ChatResponseFormat::JsonMode) => {
+				payload.x_insert("/generationConfig/responseMimeType", "application/json")?;
+			}
+			Some(ChatResponseFormat::JsonSpec(st_json)) => {
+				payload.x_insert("/generationConfig/responseMimeType", "application/json")?;
+				let mut schema = st_json.schema.clone();
 
-			// Remove `additionalProperties` as Gemini doesn't accept it
-			schema.x_walk(|parent_map, name| {
-				if name == "additionalProperties" {
-					parent_map.remove("additionalProperties");
-				}
-				true
-			});
+				// Remove `additionalProperties` as Gemini doesn't accept it
+				schema.x_walk(|parent_map, name| {
+					if name == "additionalProperties" {
+						parent_map.remove("additionalProperties");
+					}
+					true
+				});
 
-			payload.x_insert("/generationConfig/responseJsonSchema", schema)?;
+				payload.x_insert("/generationConfig/responseJsonSchema", schema)?;
+			}
+			None => {}
 		}
 
 		// -- Add supported ChatOptions
@@ -293,6 +314,7 @@ impl Adapter for GeminiAdapter {
 				GeminiChatContent::Text(text) => content.push(text),
 				GeminiChatContent::ToolCall(tool_call) => content.push(tool_call),
 				GeminiChatContent::Binary(binary) => content.push(binary),
+				GeminiChatContent::ThoughtSignature(sig) => content.push(ContentPart::ThoughtSignature(sig)),
 			}
 		}
 
@@ -656,6 +678,11 @@ impl GeminiAdapter {
 		};
 
 		for mut part in parts {
+			// -- Capture thought signature from the part (top level)
+			if let Ok(sig) = part.x_take::<String>("thoughtSignature") {
+				content.push(GeminiChatContent::ThoughtSignature(sig));
+			}
+        
 			// -- Capture eventual function call
 			if let Ok(fn_call_value) = part.x_take::<Value>("functionCall") {
 				// Capture thought signature if present (Gemini 3 specific)
@@ -799,7 +826,20 @@ impl GeminiAdapter {
 					let mut parts_values: Vec<Value> = Vec::new();
 					for part in msg.content {
 						match part {
-							ContentPart::Text(text) => parts_values.push(json!({"text": text})),
+							
+							ContentPart::ThoughtSignature(sig) => {
+								if let Some(last_part) = parts_values.last_mut() {
+									if let Some(obj) = last_part.as_object_mut() {
+										obj.insert("thoughtSignature".to_string(), Value::String(sig));
+									}
+								} else {
+									parts_values.push(json!({
+										"text": "",
+										"thoughtSignature": sig
+									}));
+								}
+							}
+ContentPart::Text(text) => parts_values.push(json!({"text": text})),
 							ContentPart::Binary(binary) => {
 								let Binary {
 									content_type, source, ..
@@ -854,7 +894,20 @@ impl GeminiAdapter {
 					let mut parts_values: Vec<Value> = Vec::new();
 					for part in msg.content {
 						match part {
-							ContentPart::Text(text) => parts_values.push(json!({"text": text})),
+							
+							ContentPart::ThoughtSignature(sig) => {
+								if let Some(last_part) = parts_values.last_mut() {
+									if let Some(obj) = last_part.as_object_mut() {
+										obj.insert("thoughtSignature".to_string(), Value::String(sig));
+									}
+								} else {
+									parts_values.push(json!({
+										"text": "",
+										"thoughtSignature": sig
+									}));
+								}
+							}
+ContentPart::Text(text) => parts_values.push(json!({"text": text})),
 							ContentPart::ToolCall(tool_call) => {
 								let mut function_call = json!({
 									"name": tool_call.fn_name,
@@ -982,6 +1035,7 @@ pub(super) enum GeminiChatContent {
 	Text(String),
 	ToolCall(ToolCall),
 	Binary(Binary),
+	ThoughtSignature(String),
 }
 
 struct GeminiChatRequestParts {

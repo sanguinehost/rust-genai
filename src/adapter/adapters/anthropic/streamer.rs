@@ -183,6 +183,7 @@ impl futures::Stream for AnthropicStreamer {
 								captured_text_content: self.captured_data.content.take(),
 								captured_reasoning_content: self.captured_data.reasoning_content.take(),
 								captured_tool_calls: self.captured_data.tool_calls.take(),
+								captured_thought_signature: None,
 							};
 
 							// TODO: Need to capture the data as needed

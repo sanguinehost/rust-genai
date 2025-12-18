@@ -109,6 +109,7 @@ pub struct StreamEnd {
 
 	/// Captured reasoning content if `ChatOptions.capture_reasoning` is enabled.
 	pub captured_reasoning_content: Option<String>,
+	pub captured_thought_signature: Option<String>,
 }
 
 impl From<InterStreamEnd> for StreamEnd {
@@ -136,6 +137,7 @@ impl From<InterStreamEnd> for StreamEnd {
 			captured_usage: inter_end.captured_usage,
 			captured_content,
 			captured_reasoning_content: inter_end.captured_reasoning_content,
+			captured_thought_signature: inter_end.captured_thought_signature,
 		}
 	}
 }

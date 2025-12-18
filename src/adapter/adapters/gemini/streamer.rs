@@ -55,6 +55,7 @@ impl futures::Stream for GeminiStreamer {
 								captured_text_content: self.captured_data.content.take(),
 								captured_reasoning_content: self.captured_data.reasoning_content.take(),
 								captured_tool_calls: self.captured_data.tool_calls.take(),
+								captured_thought_signature: self.captured_data.thought_signature.take(),
 							};
 
 							InterStreamEvent::End(inter_stream_end)
@@ -95,7 +96,11 @@ impl futures::Stream for GeminiStreamer {
 								match g_content_item {
 									GeminiChatContent::Text(text) => stream_text_content.push_str(&text),
 									GeminiChatContent::ToolCall(tool_call) => stream_tool_call = Some(tool_call),
-									GeminiChatContent::Binary(_) => {
+									
+					GeminiChatContent::ThoughtSignature(sig) => {
+						self.captured_data.thought_signature = Some(sig);
+					}
+GeminiChatContent::Binary(_) => {
 										// Binary content (images) are typically not streamed incrementally
 										// They arrive complete, so we skip them in the streaming context
 									}

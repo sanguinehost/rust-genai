@@ -1,6 +1,6 @@
 # genai - Multi-AI Providers Library for Rust
 
-Currently natively supports: **OpenAI**, **Anthropic**, **Gemini**, **XAI/Grok**, **Ollama**, **Groq**, **DeepSeek** (deepseek.com & Groq), **Cohere** (more to come)
+Currently natively supports: **OpenAI**, **Anthropic**, **Gemini**, **Vertex AI**, **XAI/Grok**, **Ollama**, **Groq**, **DeepSeek** (deepseek.com & Groq), **Cohere** (more to come)
 
 Also allows a custom URL with `ServiceTargetResolver` (see [examples/c06-target-resolver.rs](examples/c06-target-resolver.rs))
 
@@ -14,7 +14,7 @@ Also allows a custom URL with `ServiceTargetResolver` (see [examples/c06-target-
 
 <br />
 
-Provides a single, ergonomic API to many generative AI providers, such as Anthropic, OpenAI, Gemini, xAI, Ollama, Groq, and more.
+Provides a single, ergonomic API to many generative AI providers, such as Anthropic, OpenAI, Gemini, Vertex AI, xAI, Ollama, Groq, and more.
 
 **NOTE:** Big update with **v0.4.x** - More adapters, PDF and image support, embeddings, custom headers, and transparent support for the OpenAI Responses API (gpt-5-codex)
 

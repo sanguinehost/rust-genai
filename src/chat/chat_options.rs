@@ -328,6 +328,10 @@ impl std::str::FromStr for ReasoningEffort {
 /// Gemini 3 thinking level for controlling reasoning depth.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ThinkingLevel {
+	/// No thinking/reasoning - fastest responses
+	None,
+	/// Minimal thinking - very light reasoning
+	Minimal,
 	Low,
 	Medium,
 	High,
@@ -337,6 +341,8 @@ impl ThinkingLevel {
 	/// Returns the lowercase variant name.
 	pub fn variant_name(&self) -> &'static str {
 		match self {
+			ThinkingLevel::None => "none",
+			ThinkingLevel::Minimal => "minimal",
 			ThinkingLevel::Low => "low",
 			ThinkingLevel::Medium => "medium",
 			ThinkingLevel::High => "high",
@@ -346,6 +352,8 @@ impl ThinkingLevel {
 	/// Returns the thinking level keyword.
 	pub fn as_keyword(&self) -> Option<&'static str> {
 		match self {
+			ThinkingLevel::None => Some("none"),
+			ThinkingLevel::Minimal => Some("minimal"),
 			ThinkingLevel::Low => Some("low"),
 			ThinkingLevel::Medium => Some("medium"),
 			ThinkingLevel::High => Some("high"),
@@ -355,6 +363,8 @@ impl ThinkingLevel {
 	/// Parses a thinking level keyword.
 	pub fn from_keyword(name: &str) -> Option<Self> {
 		match name {
+			"none" | "off" | "disabled" => Some(ThinkingLevel::None),
+			"minimal" => Some(ThinkingLevel::Minimal),
 			"low" => Some(ThinkingLevel::Low),
 			"medium" => Some(ThinkingLevel::Medium),
 			"high" => Some(ThinkingLevel::High),
@@ -378,6 +388,8 @@ impl ThinkingLevel {
 impl std::fmt::Display for ThinkingLevel {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
+			ThinkingLevel::None => write!(f, "none"),
+			ThinkingLevel::Minimal => write!(f, "minimal"),
 			ThinkingLevel::Low => write!(f, "low"),
 			ThinkingLevel::Medium => write!(f, "medium"),
 			ThinkingLevel::High => write!(f, "high"),

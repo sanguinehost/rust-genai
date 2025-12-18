@@ -3,8 +3,8 @@ name = "genai"
 version = "0.4.5-WIP"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-description = "Multi-AI Providers Library for Rust. (OpenAI, Gemini, Anthropic, xAI, Ollama, Groq, DeepSeek, LlamaCpp)"
-keywords = ["generative-ai","openai","chatgpt","gemini","ollama"]
+description = "Multi-AI Providers Library for Rust. (OpenAI, Gemini, Anthropic, xAI, Ollama, Groq, DeepSeek, LlamaCpp, Vertex AI)"
+keywords = ["generative-ai","openai","chatgpt","gemini","ollama","vertex-ai"]
 homepage = "https://github.com/jeremychone/rust-genai"
 repository = "https://github.com/jeremychone/rust-genai"
 
@@ -42,6 +42,7 @@ regex = { version = "1.10", optional = true }
 [features]
 default = []
 llamacpp = ["dep:llama-cpp-2", "dep:shellexpand", "dep:encoding_rs", "dep:regex"]
+vertex = []  # Google Vertex AI support
 
 [dev-dependencies]
 simple-fs = "0.8.0"
