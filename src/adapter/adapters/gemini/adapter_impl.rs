@@ -129,7 +129,7 @@ impl Adapter for GeminiAdapter {
 						crate::chat::ThinkingLevel::High => "high",
 						crate::chat::ThinkingLevel::None => unreachable!(), // handled above
 					};
-					(model_name, Some(("thinkingLevel".to_string(), serde_json::Value::String(thinking_level_str.to_string()))))
+					(model_name, Some(("thinking_level".to_string(), serde_json::Value::String(thinking_level_str.to_string()))))
 				}
 			}
 		} else if let Some(reasoning_effort) = options_set.reasoning_effort() {
