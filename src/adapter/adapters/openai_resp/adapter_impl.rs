@@ -345,7 +345,7 @@ impl OpenAIRespAdapter {
 
 						for part in msg.content {
 							match part {
-							ContentPart::ThoughtSignature(_) => {},
+								ContentPart::ThoughtSignature(_) => {}
 								// -- Simple Text
 								ContentPart::Text(content) => {
 									values.push(json!({"type": "input_text", "text": content}))
@@ -412,7 +412,7 @@ impl OpenAIRespAdapter {
 
 					for part in msg.content {
 						match part {
-							ContentPart::ThoughtSignature(_) => {},
+							ContentPart::ThoughtSignature(_) => {}
 							ContentPart::Text(text) => {
 								item_message_content.push(json!({
 										"type": "input_text",

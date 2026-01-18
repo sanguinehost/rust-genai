@@ -1,4 +1,6 @@
 use super::groq::GroqAdapter;
+#[cfg(feature = "llamacpp")]
+use crate::adapter::adapters::llamacpp;
 use crate::adapter::adapters::together::TogetherAdapter;
 use crate::adapter::adapters::zai::ZaiAdapter;
 use crate::adapter::anthropic::AnthropicAdapter;
@@ -6,8 +8,6 @@ use crate::adapter::cohere::CohereAdapter;
 use crate::adapter::deepseek::DeepSeekAdapter;
 use crate::adapter::fireworks::FireworksAdapter;
 use crate::adapter::gemini::GeminiAdapter;
-#[cfg(feature = "llamacpp")]
-use crate::adapter::adapters::llamacpp;
 use crate::adapter::nebius::NebiusAdapter;
 use crate::adapter::ollama::OllamaAdapter;
 use crate::adapter::openai::OpenAIAdapter;
@@ -47,10 +47,10 @@ impl AdapterDispatcher {
 			AdapterKind::Zai => ZaiAdapter::default_endpoint(),
 			AdapterKind::Cohere => CohereAdapter::default_endpoint(),
 			AdapterKind::Ollama => OllamaAdapter::default_endpoint(),
-            #[cfg(feature = "vertex")]
+			#[cfg(feature = "vertex")]
 			AdapterKind::Vertex => VertexAdapter::default_endpoint(),
-            #[cfg(feature = "llamacpp")]
-            AdapterKind::LlamaCpp => llamacpp::LlamaCppAdapter::default_endpoint(),
+			#[cfg(feature = "llamacpp")]
+			AdapterKind::LlamaCpp => llamacpp::LlamaCppAdapter::default_endpoint(),
 		}
 	}
 
@@ -69,10 +69,10 @@ impl AdapterDispatcher {
 			AdapterKind::Zai => ZaiAdapter::default_auth(),
 			AdapterKind::Cohere => CohereAdapter::default_auth(),
 			AdapterKind::Ollama => OllamaAdapter::default_auth(),
-            #[cfg(feature = "vertex")]
+			#[cfg(feature = "vertex")]
 			AdapterKind::Vertex => VertexAdapter::default_auth(),
-            #[cfg(feature = "llamacpp")]
-            AdapterKind::LlamaCpp => llamacpp::LlamaCppAdapter::default_auth(),
+			#[cfg(feature = "llamacpp")]
+			AdapterKind::LlamaCpp => llamacpp::LlamaCppAdapter::default_auth(),
 		}
 	}
 
@@ -91,10 +91,10 @@ impl AdapterDispatcher {
 			AdapterKind::Zai => ZaiAdapter::all_model_names(kind).await,
 			AdapterKind::Cohere => CohereAdapter::all_model_names(kind).await,
 			AdapterKind::Ollama => OllamaAdapter::all_model_names(kind).await,
-            #[cfg(feature = "vertex")]
+			#[cfg(feature = "vertex")]
 			AdapterKind::Vertex => VertexAdapter::all_model_names(kind).await,
-            #[cfg(feature = "llamacpp")]
-            AdapterKind::LlamaCpp => llamacpp::LlamaCppAdapter::all_model_names(kind).await,
+			#[cfg(feature = "llamacpp")]
+			AdapterKind::LlamaCpp => llamacpp::LlamaCppAdapter::all_model_names(kind).await,
 		}
 	}
 
@@ -113,10 +113,10 @@ impl AdapterDispatcher {
 			AdapterKind::Zai => ZaiAdapter::get_service_url(model, service_type, endpoint),
 			AdapterKind::Cohere => CohereAdapter::get_service_url(model, service_type, endpoint),
 			AdapterKind::Ollama => OllamaAdapter::get_service_url(model, service_type, endpoint),
-            #[cfg(feature = "vertex")]
+			#[cfg(feature = "vertex")]
 			AdapterKind::Vertex => VertexAdapter::get_service_url(model, service_type, endpoint),
-            #[cfg(feature = "llamacpp")]
-            AdapterKind::LlamaCpp => llamacpp::LlamaCppAdapter::get_service_url(model, service_type, endpoint),
+			#[cfg(feature = "llamacpp")]
+			AdapterKind::LlamaCpp => llamacpp::LlamaCppAdapter::get_service_url(model, service_type, endpoint),
 		}
 	}
 
@@ -147,10 +147,10 @@ impl AdapterDispatcher {
 			AdapterKind::Zai => ZaiAdapter::to_web_request_data(target, service_type, chat_req, options_set),
 			AdapterKind::Cohere => CohereAdapter::to_web_request_data(target, service_type, chat_req, options_set),
 			AdapterKind::Ollama => OllamaAdapter::to_web_request_data(target, service_type, chat_req, options_set),
-            #[cfg(feature = "vertex")]
+			#[cfg(feature = "vertex")]
 			AdapterKind::Vertex => VertexAdapter::to_web_request_data(target, service_type, chat_req, options_set),
-            #[cfg(feature = "llamacpp")]
-            AdapterKind::LlamaCpp => llamacpp::LlamaCppAdapter::to_web_request_data(target, service_type, chat_req, options_set),
+			#[cfg(feature = "llamacpp")]
+			AdapterKind::LlamaCpp => llamacpp::LlamaCppAdapter::to_web_request_data(target, service_type, chat_req, options_set),
 		}
 	}
 
@@ -173,10 +173,10 @@ impl AdapterDispatcher {
 			AdapterKind::Zai => ZaiAdapter::to_chat_response(model_iden, web_response, options_set),
 			AdapterKind::Cohere => CohereAdapter::to_chat_response(model_iden, web_response, options_set),
 			AdapterKind::Ollama => OllamaAdapter::to_chat_response(model_iden, web_response, options_set),
-            #[cfg(feature = "vertex")]
+			#[cfg(feature = "vertex")]
 			AdapterKind::Vertex => VertexAdapter::to_chat_response(model_iden, web_response, options_set),
-            #[cfg(feature = "llamacpp")]
-            AdapterKind::LlamaCpp => llamacpp::LlamaCppAdapter::to_chat_response(model_iden, web_response, options_set),
+			#[cfg(feature = "llamacpp")]
+			AdapterKind::LlamaCpp => llamacpp::LlamaCppAdapter::to_chat_response(model_iden, web_response, options_set),
 		}
 	}
 
@@ -189,7 +189,8 @@ impl AdapterDispatcher {
 			AdapterKind::OpenAI => OpenAIAdapter::to_chat_stream(model_iden, reqwest_builder, options_set),
 			AdapterKind::OpenAIResp => Err(Error::AdapterNotSupported {
 				adapter_kind: model_iden.adapter_kind,
-				feature: "stream".to_string(),}),
+				feature: "stream".to_string(),
+			}),
 			AdapterKind::Gemini => GeminiAdapter::to_chat_stream(model_iden, reqwest_builder, options_set),
 			AdapterKind::Anthropic => AnthropicAdapter::to_chat_stream(model_iden, reqwest_builder, options_set),
 			AdapterKind::Fireworks => FireworksAdapter::to_chat_stream(model_iden, reqwest_builder, options_set),
@@ -201,10 +202,10 @@ impl AdapterDispatcher {
 			AdapterKind::Zai => ZaiAdapter::to_chat_stream(model_iden, reqwest_builder, options_set),
 			AdapterKind::Cohere => CohereAdapter::to_chat_stream(model_iden, reqwest_builder, options_set),
 			AdapterKind::Ollama => OllamaAdapter::to_chat_stream(model_iden, reqwest_builder, options_set),
-            #[cfg(feature = "vertex")]
+			#[cfg(feature = "vertex")]
 			AdapterKind::Vertex => VertexAdapter::to_chat_stream(model_iden, reqwest_builder, options_set),
-            #[cfg(feature = "llamacpp")]
-            AdapterKind::LlamaCpp => llamacpp::LlamaCppAdapter::to_chat_stream(model_iden, reqwest_builder, options_set),
+			#[cfg(feature = "llamacpp")]
+			AdapterKind::LlamaCpp => llamacpp::LlamaCppAdapter::to_chat_stream(model_iden, reqwest_builder, options_set),
 		}
 	}
 
@@ -218,7 +219,8 @@ impl AdapterDispatcher {
 			AdapterKind::OpenAI => OpenAIAdapter::to_embed_request_data(target, embed_req, options_set),
 			AdapterKind::OpenAIResp => Err(Error::AdapterNotSupported {
 				adapter_kind: target.model.adapter_kind,
-				feature: "embed".to_string(),}),
+				feature: "embed".to_string(),
+			}),
 			AdapterKind::Gemini => GeminiAdapter::to_embed_request_data(target, embed_req, options_set),
 			AdapterKind::Anthropic => AnthropicAdapter::to_embed_request_data(target, embed_req, options_set),
 			AdapterKind::Fireworks => FireworksAdapter::to_embed_request_data(target, embed_req, options_set),
@@ -230,10 +232,10 @@ impl AdapterDispatcher {
 			AdapterKind::Zai => ZaiAdapter::to_embed_request_data(target, embed_req, options_set),
 			AdapterKind::Cohere => CohereAdapter::to_embed_request_data(target, embed_req, options_set),
 			AdapterKind::Ollama => OllamaAdapter::to_embed_request_data(target, embed_req, options_set),
-            #[cfg(feature = "vertex")]
+			#[cfg(feature = "vertex")]
 			AdapterKind::Vertex => VertexAdapter::to_embed_request_data(target, embed_req, options_set),
-            #[cfg(feature = "llamacpp")]
-            AdapterKind::LlamaCpp => llamacpp::LlamaCppAdapter::to_embed_request_data(target, embed_req, options_set),
+			#[cfg(feature = "llamacpp")]
+			AdapterKind::LlamaCpp => llamacpp::LlamaCppAdapter::to_embed_request_data(target, embed_req, options_set),
 		}
 	}
 
@@ -246,7 +248,8 @@ impl AdapterDispatcher {
 			AdapterKind::OpenAI => OpenAIAdapter::to_embed_response(model_iden, web_response, options_set),
 			AdapterKind::OpenAIResp => Err(Error::AdapterNotSupported {
 				adapter_kind: model_iden.adapter_kind,
-				feature: "embed".to_string(),}),
+				feature: "embed".to_string(),
+			}),
 			AdapterKind::Gemini => GeminiAdapter::to_embed_response(model_iden, web_response, options_set),
 			AdapterKind::Anthropic => AnthropicAdapter::to_embed_response(model_iden, web_response, options_set),
 			AdapterKind::Fireworks => FireworksAdapter::to_embed_response(model_iden, web_response, options_set),
@@ -258,10 +261,10 @@ impl AdapterDispatcher {
 			AdapterKind::Zai => ZaiAdapter::to_embed_response(model_iden, web_response, options_set),
 			AdapterKind::Cohere => CohereAdapter::to_embed_response(model_iden, web_response, options_set),
 			AdapterKind::Ollama => OllamaAdapter::to_embed_response(model_iden, web_response, options_set),
-            #[cfg(feature = "vertex")]
+			#[cfg(feature = "vertex")]
 			AdapterKind::Vertex => VertexAdapter::to_embed_response(model_iden, web_response, options_set),
-            #[cfg(feature = "llamacpp")]
-            AdapterKind::LlamaCpp => llamacpp::LlamaCppAdapter::to_embed_response(model_iden, web_response, options_set),
+			#[cfg(feature = "llamacpp")]
+			AdapterKind::LlamaCpp => llamacpp::LlamaCppAdapter::to_embed_response(model_iden, web_response, options_set),
 		}
 	}
 

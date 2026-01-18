@@ -168,89 +168,81 @@ struct BuffResponse {
 /// - Main JSON object `,` delimiter will be skipped
 /// - The ending `]` will be sent as a `]` message as well.
 fn new_with_pretty_json_array(
-        buff_string: String,
-        partial_message: &mut Option<String>,
+	buff_string: String,
+	partial_message: &mut Option<String>,
 ) -> Result<BuffResponse, crate::webc::Error> {
-        let buff_str = buff_string.trim();
+	let buff_str = buff_string.trim();
 
-        let mut messages: Vec<String> = Vec::new();
+	let mut messages: Vec<String> = Vec::new();
 
-        // -- Capture the array start/end
-        let (array_start, rest_str) = match buff_str.strip_prefix('[') {
-                Some(rest) => (Some("["), rest.trim()),
-                None => (None, buff_str),
-        };
+	// -- Capture the array start
+	let (array_start, rest_str) = match buff_str.strip_prefix('[') {
+		Some(rest) => (Some("["), rest.trim()),
+		None => (None, buff_str),
+	};
 
-        // Remove the eventual ',' prefix.
-        let rest_str = rest_str.strip_prefix(',').unwrap_or(rest_str).trim();
+	if let Some(array_start) = array_start {
+		messages.push(array_start.to_string());
+	}
 
-        // Handle array end
-        let (rest_str, array_end) = match rest_str.strip_suffix(']') {
-                Some(rest) => (rest.trim(), Some("]")),
-                None => (rest_str, None),
-        };
+	let full_str = if let Some(partial) = partial_message.take() {
+		format!("{partial}{rest_str}")
+	} else {
+		rest_str.to_string()
+	};
 
-        // Remove trailing comma if present before the ]
-        let rest_str = rest_str.strip_suffix(',').unwrap_or(rest_str).trim();
+	if !full_str.is_empty() {
+		let mut cursor = full_str.as_str();
+		loop {
+			cursor = cursor.trim_start_matches(|c| c == ',' || c == '\n' || c == ' ' || c == '\t');
+			if cursor.is_empty() {
+				break;
+			}
 
-        if let Some(array_start) = array_start {
-                messages.push(array_start.to_string());
-        }
+			let mut stream = serde_json::Deserializer::from_str(cursor).into_iter::<serde_json::Value>();
+			match stream.next() {
+				Some(Ok(val)) => {
+					messages.push(val.to_string());
+					let offset = stream.byte_offset();
+					cursor = &cursor[offset..];
+				}
+				Some(Err(_)) => {
+					// If it failed, check if it's the array end delimiter ']'
+					if cursor.starts_with(']') {
+						messages.push("]".to_string());
+						cursor = &cursor[1..].trim_start();
+						// Continue the loop to handle any trailing commas or other objects (though unlikely after ']')
+						continue;
+					}
 
-        let full_str = if let Some(partial) = partial_message.take() {
-                format!("{partial}{rest_str}")
-        } else {
-                rest_str.to_string()
-        };
+					*partial_message = Some(cursor.to_string());
+					break;
+				}
+				None => {
+					break;
+				}
+			}
+		}
+	}
 
-        if !full_str.is_empty() {
-             let mut cursor = full_str.as_str();
-             loop {
-                 cursor = cursor.trim_start_matches(|c| c == ',' || c == '\n' || c == ' ' || c == '\t');
-                 if cursor.is_empty() {
-                     break;
-                 }
+	// -- Return the buff response
+	let first_message = if !messages.is_empty() {
+		Some(messages[0].to_string())
+	} else {
+		None
+	};
 
-                 let mut stream = serde_json::Deserializer::from_str(cursor).into_iter::<serde_json::Value>();
-                 match stream.next() {
-                     Some(Ok(val)) => {
-                         messages.push(val.to_string());
-                         let offset = stream.byte_offset();
-                         cursor = &cursor[offset..];
-                     },
-                     Some(Err(_)) => {
-                         *partial_message = Some(cursor.to_string());
-                         break;
-                     }
-                     None => {
-                         break;
-                     }
-                 }
-             }
-        }
+	let next_messages = if messages.len() > 1 {
+		Some(messages[1..].to_vec())
+	} else {
+		None
+	};
 
-        if let Some(array_end) = array_end {
-                messages.push(array_end.to_string());
-        }
-
-        // -- Return the buff response
-        let first_message = if !messages.is_empty() {
-                Some(messages[0].to_string())
-        } else {
-                None
-        };
-
-        let next_messages = if messages.len() > 1 {
-                Some(messages[1..].to_vec())
-        } else {
-                None
-        };
-
-        Ok(BuffResponse {
-                first_message,
-                next_messages,
-                candidate_message: partial_message.take(),
-        })
+	Ok(BuffResponse {
+		first_message,
+		next_messages,
+		candidate_message: partial_message.take(),
+	})
 }
 
 /// Process a string buffer for the delimited mode (e.g., Cohere)
@@ -294,4 +286,48 @@ fn process_buff_string_delimited(
 		next_messages,
 		candidate_message,
 	})
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn test_new_with_pretty_json_array_nested_ok() {
+		let mut partial = None;
+		// Chunk ends with a nested array bracket.
+		let chunk = r#"{ "a": [1] }"#.to_string();
+		let res = new_with_pretty_json_array(chunk, &mut partial).unwrap();
+
+		// Should parse successfully as one message.
+		assert_eq!(res.first_message.as_deref(), Some(r#"{"a":[1]}"#));
+		assert_eq!(partial, None);
+	}
+
+	#[test]
+	fn test_new_with_pretty_json_array_partial_nested() {
+		let mut partial = None;
+		// Chunk ends with a nested bracket, but it's partial.
+		let chunk = r#"{ "a": [1"#.to_string();
+		let res = new_with_pretty_json_array(chunk, &mut partial).unwrap();
+
+		// Should be partial, no messages.
+		assert_eq!(res.first_message, None);
+		assert_eq!(res.candidate_message.as_deref(), Some(r#"{ "a": [1"#));
+	}
+
+	#[test]
+	fn test_new_with_pretty_json_array_full_stream() {
+		let mut partial = None;
+		// Full stream: [ { "a": 1 }, { "b": 2 } ]
+		let chunk = r#"[ { "a": 1 }, { "b": 2 } ]"#.to_string();
+		let res = new_with_pretty_json_array(chunk, &mut partial).unwrap();
+
+		assert_eq!(res.first_message.as_deref(), Some("["));
+		let next = res.next_messages.unwrap();
+		assert_eq!(next.len(), 3);
+		assert_eq!(next[0], r#"{"a":1}"#);
+		assert_eq!(next[1], r#"{"b":2}"#);
+		assert_eq!(next[2], "]");
+	}
 }

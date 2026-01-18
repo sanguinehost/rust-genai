@@ -8,9 +8,9 @@ use crate::adapter::gemini::GeminiAdapter;
 use crate::adapter::groq::{self, GroqAdapter};
 use crate::adapter::nebius::NebiusAdapter;
 use crate::adapter::openai::OpenAIAdapter;
-use crate::adapter::xai::XaiAdapter;
 #[cfg(feature = "vertex")]
 use crate::adapter::vertex::VertexAdapter;
+use crate::adapter::xai::XaiAdapter;
 use crate::{ModelName, Result};
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
@@ -47,9 +47,9 @@ pub enum AdapterKind {
 	Cohere,
 	/// OpenAI shared behavior + some custom. (currently, localhost only, can be customize with ServerTargetResolver).
 	Ollama,
-    #[cfg(feature = "vertex")]
+	#[cfg(feature = "vertex")]
 	/// Google Vertex AI adapter - separate from Gemini API due to different auth and endpoint structure
-            #[cfg(feature = "vertex")]
+	#[cfg(feature = "vertex")]
 	Vertex,
 	/// For native llama.cpp integration with local models
 	#[cfg(feature = "llamacpp")]
@@ -74,7 +74,7 @@ impl AdapterKind {
 			AdapterKind::Zai => "Zai",
 			AdapterKind::Cohere => "Cohere",
 			AdapterKind::Ollama => "Ollama",
-            #[cfg(feature = "vertex")]
+			#[cfg(feature = "vertex")]
 			AdapterKind::Vertex => "Vertex",
 			#[cfg(feature = "llamacpp")]
 			AdapterKind::LlamaCpp => "LlamaCpp",
@@ -97,7 +97,7 @@ impl AdapterKind {
 			AdapterKind::Zai => "zai",
 			AdapterKind::Cohere => "cohere",
 			AdapterKind::Ollama => "ollama",
-            #[cfg(feature = "vertex")]
+			#[cfg(feature = "vertex")]
 			AdapterKind::Vertex => "vertex",
 			#[cfg(feature = "llamacpp")]
 			AdapterKind::LlamaCpp => "llamacpp",
@@ -119,7 +119,7 @@ impl AdapterKind {
 			"zai" => Some(AdapterKind::Zai),
 			"cohere" => Some(AdapterKind::Cohere),
 			"ollama" => Some(AdapterKind::Ollama),
-            #[cfg(feature = "vertex")]
+			#[cfg(feature = "vertex")]
 			"vertex" => Some(AdapterKind::Vertex),
 			#[cfg(feature = "llamacpp")]
 			"llamacpp" => Some(AdapterKind::LlamaCpp),
@@ -146,7 +146,7 @@ impl AdapterKind {
 			AdapterKind::Zai => Some(ZaiAdapter::API_KEY_DEFAULT_ENV_NAME),
 			AdapterKind::Cohere => Some(CohereAdapter::API_KEY_DEFAULT_ENV_NAME),
 			AdapterKind::Ollama => None,
-            #[cfg(feature = "vertex")]
+			#[cfg(feature = "vertex")]
 			AdapterKind::Vertex => Some(VertexAdapter::API_KEY_DEFAULT_ENV_NAME),
 			#[cfg(feature = "llamacpp")]
 			AdapterKind::LlamaCpp => None,

@@ -57,10 +57,11 @@ async fn test_imagen_generate_simple_ok() -> Result<(), String> {
 
 	println!("->> test_imagen_generate_simple_ok - model: {model_name}");
 
-	let request =
-		ImagenGenerateImagesRequest::new("A highly detailed, photorealistic image of a sleek sports car on a mountain road at golden hour.")
-			.with_number_of_images(1)
-			.with_aspect_ratio("16:9");
+	let request = ImagenGenerateImagesRequest::new(
+		"A highly detailed, photorealistic image of a sleek sports car on a mountain road at golden hour.",
+	)
+	.with_number_of_images(1)
+	.with_aspect_ratio("16:9");
 
 	let response = client
 		.exec_generate_images_imagen(model_name, request)
@@ -90,7 +91,9 @@ async fn test_conversational_image_generation_ok() -> Result<(), String> {
 
 	println!("->> test_conversational_image_generation_ok - model: {model_name}");
 
-	let user_message = ChatMessage::user("Generate an image of a cute fluffy ginger tabby kitten with bright green eyes, wearing a small blue knitted hat that sits slightly askew on its head. The kitten should be sitting attentively looking at the camera.");
+	let user_message = ChatMessage::user(
+		"Generate an image of a cute fluffy ginger tabby kitten with bright green eyes, wearing a small blue knitted hat that sits slightly askew on its head. The kitten should be sitting attentively looking at the camera.",
+	);
 	let chat_request = ChatRequest::new(vec![user_message]);
 	let chat_options = ChatOptions::default().with_response_modalities(vec!["Text".to_string(), "Image".to_string()]);
 
@@ -118,11 +121,7 @@ async fn test_conversational_image_generation_ok() -> Result<(), String> {
 			ContentPart::Binary(binary) => {
 				println!("      Binary - MimeType: {:?}", binary.content_type);
 				if let BinarySource::Base64(b64_data) = &binary.source {
-					save_image_bytes(
-						"conversational_img",
-						part_idx,
-						b64_data,
-					)?;
+					save_image_bytes("conversational_img", part_idx, b64_data)?;
 					image_found = true;
 				}
 			}

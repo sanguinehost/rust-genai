@@ -273,8 +273,7 @@ impl Client {
 		// Extract model_iden before moving target
 		let target_model = target.model.clone();
 
-		let web_request_data =
-			AdapterDispatcher::get_veo_operation_status_request_data(target, &operation_name)?;
+		let web_request_data = AdapterDispatcher::get_veo_operation_status_request_data(target, &operation_name)?;
 
 		let headers_vec: Vec<(String, String)> = web_request_data.headers.into_iter().collect();
 		let web_res = self

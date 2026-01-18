@@ -3,9 +3,9 @@ use crate::adapter::gemini::streamer::GeminiStreamer;
 use crate::adapter::{Adapter, AdapterKind, ServiceType, WebRequestData};
 use crate::chat::{
 	Binary, BinarySource, ChatOptionsSet, ChatRequest, ChatResponse, ChatResponseFormat, ChatRole, ChatStream,
-	ChatStreamResponse, CompletionTokensDetails, ContentPart, ImagenGenerateImagesRequest, ImagenGenerateImagesResponse,
-	MessageContent, PromptTokensDetails, ReasoningEffort, ToolCall, Usage, VeoGenerateVideosRequest,
-	VeoGenerateVideosResponse, VeoOperationResult, VeoOperationStatusResponse,
+	ChatStreamResponse, CompletionTokensDetails, ContentPart, ImagenGenerateImagesRequest,
+	ImagenGenerateImagesResponse, MessageContent, PromptTokensDetails, ReasoningEffort, ToolCall, Usage,
+	VeoGenerateVideosRequest, VeoGenerateVideosResponse, VeoOperationResult, VeoOperationStatusResponse,
 };
 use crate::resolver::{AuthData, Endpoint};
 use crate::webc::{WebResponse, WebStream};
@@ -24,21 +24,17 @@ const MODELS: &[&str] = &[
 	"gemini-2.5-pro",
 	"gemini-2.5-flash",
 	"gemini-2.5-flash-lite",
-
 	// Preview models (09-2025)
 	"gemini-2.5-flash-preview-09-2025",
 	"gemini-2.5-flash-lite-preview-09-2025",
-
 	// Specialized models
 	"gemini-2.5-flash-image",
 	"gemini-2.0-flash-preview-image-generation",
-
 	// Imagen models
-	"imagen-4.0-generate-001",        // Imagen 4 Standard
-	"imagen-4.0-ultra-generate-001",  // Imagen 4 Ultra
-	"imagen-4.0-fast-generate-001",   // Imagen 4 Fast
-	"imagen-3.0-generate-002",        // Imagen 3
-
+	"imagen-4.0-generate-001",       // Imagen 4 Standard
+	"imagen-4.0-ultra-generate-001", // Imagen 4 Ultra
+	"imagen-4.0-fast-generate-001",  // Imagen 4 Fast
+	"imagen-3.0-generate-002",       // Imagen 3
 	// Veo models
 	"veo-3.1-generate-preview",      // Veo 3.1 Standard (latest, with audio, advanced features)
 	"veo-3.1-fast-generate-preview", // Veo 3.1 Fast
@@ -116,7 +112,13 @@ impl Adapter for GeminiAdapter {
 				crate::chat::ThinkingLevel::None => {
 					// Disable thinking entirely via thinkingBudget: 0 (Gemini 2.5 only)
 					// For Gemini 3, use Minimal instead as None is not supported
-					(model_name, Some(("thinkingBudget".to_string(), serde_json::Value::Number(serde_json::Number::from(REASONING_ZERO)))))
+					(
+						model_name,
+						Some((
+							"thinkingBudget".to_string(),
+							serde_json::Value::Number(serde_json::Number::from(REASONING_ZERO)),
+						)),
+					)
 				}
 				_ => {
 					// All other levels use thinkingLevel string (works for Gemini 3)
@@ -129,7 +131,13 @@ impl Adapter for GeminiAdapter {
 						crate::chat::ThinkingLevel::High => "high",
 						crate::chat::ThinkingLevel::None => unreachable!(), // handled above
 					};
-					(model_name, Some(("thinking_level".to_string(), serde_json::Value::String(thinking_level_str.to_string()))))
+					(
+						model_name,
+						Some((
+							"thinking_level".to_string(),
+							serde_json::Value::String(thinking_level_str.to_string()),
+						)),
+					)
 				}
 			}
 		} else if let Some(reasoning_effort) = options_set.reasoning_effort() {
@@ -141,7 +149,13 @@ impl Adapter for GeminiAdapter {
 				ReasoningEffort::High => REASONING_HIGH,
 				ReasoningEffort::Budget(budget) => *budget,
 			};
-			(model_name, Some(("thinkingBudget".to_string(), serde_json::Value::Number(serde_json::Number::from(reasoning)))))
+			(
+				model_name,
+				Some((
+					"thinkingBudget".to_string(),
+					serde_json::Value::Number(serde_json::Number::from(reasoning)),
+				)),
+			)
 		} else {
 			// No explicit reasoning effort, try to infer from model name suffix (supports -zero)
 			if let Some((prefix, last)) = model_name.rsplit_once('-') {
@@ -155,7 +169,13 @@ impl Adapter for GeminiAdapter {
 				// create the model name if there was a `-..` reasoning suffix
 				let trimmed_model_name = if reasoning.is_some() { prefix } else { model_name };
 				if let Some(reasoning) = reasoning {
-					(trimmed_model_name, Some(("thinkingBudget".to_string(), serde_json::Value::Number(serde_json::Number::from(reasoning)))))
+					(
+						trimmed_model_name,
+						Some((
+							"thinkingBudget".to_string(),
+							serde_json::Value::Number(serde_json::Number::from(reasoning)),
+						)),
+					)
 				} else {
 					(trimmed_model_name, None)
 				}
@@ -250,7 +270,8 @@ impl Adapter for GeminiAdapter {
 			if model_name.starts_with("gemini-3") && temperature < 0.7 {
 				tracing::warn!(
 					"Low temperature ({}) detected for Gemini 3 model '{}'. This may cause unexpected behavior such as looping or degraded performance. Consider using the default temperature of 1.0 for optimal performance.",
-					temperature, model_name
+					temperature,
+					model_name
 				);
 			}
 			payload.x_insert("/generationConfig/temperature", temperature)?;
@@ -682,7 +703,7 @@ impl GeminiAdapter {
 			if let Ok(sig) = part.x_take::<String>("thoughtSignature") {
 				content.push(GeminiChatContent::ThoughtSignature(sig));
 			}
-        
+
 			// -- Capture eventual function call
 			if let Ok(fn_call_value) = part.x_take::<Value>("functionCall") {
 				// Capture thought signature if present (Gemini 3 specific)
@@ -710,7 +731,9 @@ impl GeminiAdapter {
 
 			// -- Capture eventual inline_data (for images)
 			if let Ok(mut inline_data) = part.x_take::<Value>("inlineData") {
-				let mime_type = inline_data.x_get::<String>("mimeType").unwrap_or_else(|_| "image/png".to_string());
+				let mime_type = inline_data
+					.x_get::<String>("mimeType")
+					.unwrap_or_else(|_| "image/png".to_string());
 				if let Ok(data) = inline_data.x_take::<String>("data") {
 					let binary = Binary {
 						content_type: mime_type,
@@ -826,7 +849,6 @@ impl GeminiAdapter {
 					let mut parts_values: Vec<Value> = Vec::new();
 					for part in msg.content {
 						match part {
-							
 							ContentPart::ThoughtSignature(sig) => {
 								if let Some(last_part) = parts_values.last_mut() {
 									if let Some(obj) = last_part.as_object_mut() {
@@ -839,7 +861,7 @@ impl GeminiAdapter {
 									}));
 								}
 							}
-ContentPart::Text(text) => parts_values.push(json!({"text": text})),
+							ContentPart::Text(text) => parts_values.push(json!({"text": text})),
 							ContentPart::Binary(binary) => {
 								let Binary {
 									content_type, source, ..
@@ -894,7 +916,6 @@ ContentPart::Text(text) => parts_values.push(json!({"text": text})),
 					let mut parts_values: Vec<Value> = Vec::new();
 					for part in msg.content {
 						match part {
-							
 							ContentPart::ThoughtSignature(sig) => {
 								if let Some(last_part) = parts_values.last_mut() {
 									if let Some(obj) = last_part.as_object_mut() {
@@ -907,7 +928,7 @@ ContentPart::Text(text) => parts_values.push(json!({"text": text})),
 									}));
 								}
 							}
-ContentPart::Text(text) => parts_values.push(json!({"text": text})),
+							ContentPart::Text(text) => parts_values.push(json!({"text": text})),
 							ContentPart::ToolCall(tool_call) => {
 								let mut function_call = json!({
 									"name": tool_call.fn_name,

@@ -405,7 +405,7 @@ impl OpenAIAdapter {
 						let mut values: Vec<Value> = Vec::new();
 						for part in msg.content {
 							match part {
-							ContentPart::ThoughtSignature(_) => {},
+								ContentPart::ThoughtSignature(_) => {}
 								ContentPart::Text(content) => values.push(json!({"type": "text", "text": content})),
 								ContentPart::Binary(binary) => {
 									let is_image = binary.is_image();
@@ -469,7 +469,7 @@ impl OpenAIAdapter {
 					let mut tool_calls: Vec<Value> = Vec::new();
 					for part in msg.content {
 						match part {
-							ContentPart::ThoughtSignature(_) => {},
+							ContentPart::ThoughtSignature(_) => {}
 							ContentPart::Text(text) => texts.push(text),
 							ContentPart::ToolCall(tool_call) => {
 								//

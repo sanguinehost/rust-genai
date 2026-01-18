@@ -70,7 +70,11 @@ impl futures::Stream for GeminiStreamer {
 							}) {
 								Ok(json_block) => json_block,
 								Err(err) => {
-									tracing::error!("Gemini Adapter Stream Error: {}", err);
+									tracing::error!(
+										"Gemini Adapter Stream Error: {}. Raw block_string: {}",
+										err,
+										block_string
+									);
 									return Poll::Ready(Some(Err(err)));
 								}
 							};
@@ -96,11 +100,11 @@ impl futures::Stream for GeminiStreamer {
 								match g_content_item {
 									GeminiChatContent::Text(text) => stream_text_content.push_str(&text),
 									GeminiChatContent::ToolCall(tool_call) => stream_tool_call = Some(tool_call),
-									
-					GeminiChatContent::ThoughtSignature(sig) => {
-						self.captured_data.thought_signature = Some(sig);
-					}
-GeminiChatContent::Binary(_) => {
+
+									GeminiChatContent::ThoughtSignature(sig) => {
+										self.captured_data.thought_signature = Some(sig);
+									}
+									GeminiChatContent::Binary(_) => {
 										// Binary content (images) are typically not streamed incrementally
 										// They arrive complete, so we skip them in the streaming context
 									}

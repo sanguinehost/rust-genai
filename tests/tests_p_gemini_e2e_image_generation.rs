@@ -74,9 +74,7 @@ async fn test_conversational_image_generation() -> Result<(), Box<dyn std::error
 	let request = ChatRequest::new(vec![message]);
 	let options = ChatOptions::default().with_response_modalities(vec!["TEXT".to_string(), "IMAGE".to_string()]);
 
-	let response = client
-		.exec_chat("gemini-2.5-flash-image", request, Some(&options))
-		.await?;
+	let response = client.exec_chat("gemini-2.5-flash-image", request, Some(&options)).await?;
 
 	// In v0.4.x, response.content is MessageContent (struct), not Vec<MessageContent>
 	let content = &response.content;
@@ -91,11 +89,7 @@ async fn test_conversational_image_generation() -> Result<(), Box<dyn std::error
 			}
 			ContentPart::Binary(binary) => {
 				if let BinarySource::Base64(data) = &binary.source {
-					let filename = format!(
-						"output/conversational_test_{}_{}.png",
-						get_timestamp(),
-						part_idx
-					);
+					let filename = format!("output/conversational_test_{}_{}.png", get_timestamp(), part_idx);
 					save_image(&filename, data)?;
 					image_count += 1;
 				}
@@ -216,9 +210,7 @@ async fn test_conversational_generation_impl() -> Result<(), Box<dyn std::error:
 	let request = ChatRequest::new(vec![message]);
 	let options = ChatOptions::default().with_response_modalities(vec!["TEXT".to_string(), "IMAGE".to_string()]);
 
-	let response = client
-		.exec_chat("gemini-2.5-flash-image", request, Some(&options))
-		.await?;
+	let response = client.exec_chat("gemini-2.5-flash-image", request, Some(&options)).await?;
 
 	// In v0.4.x, response.content is MessageContent (struct), not Vec<MessageContent>
 	let content = &response.content;
@@ -233,11 +225,7 @@ async fn test_conversational_generation_impl() -> Result<(), Box<dyn std::error:
 			}
 			ContentPart::Binary(binary) => {
 				if let BinarySource::Base64(data) = &binary.source {
-					let filename = format!(
-						"output/conversational_test_{}_{}.png",
-						get_timestamp(),
-						part_idx
-					);
+					let filename = format!("output/conversational_test_{}_{}.png", get_timestamp(), part_idx);
 					save_image(&filename, data)?;
 					image_count += 1;
 				}

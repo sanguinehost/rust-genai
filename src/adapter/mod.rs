@@ -16,11 +16,11 @@ pub mod adapters;
 mod dispatcher;
 
 // -- Flatten (private, crate, public)
-use adapters::{anthropic, cohere, deepseek, fireworks, gemini, groq, nebius, ollama, openai, openai_resp, xai};
 #[cfg(feature = "llamacpp")]
 use adapters::llamacpp;
 #[cfg(feature = "vertex")]
 use adapters::vertex;
+use adapters::{anthropic, cohere, deepseek, fireworks, gemini, groq, nebius, ollama, openai, openai_resp, xai};
 #[allow(unused_imports)]
 use adapters::{together, zai};
 
@@ -28,7 +28,6 @@ pub(crate) use adapter_types::*;
 pub(crate) use dispatcher::*;
 
 pub use adapter_kind::*;
-
 
 // -- Crate modules
 pub(crate) mod inter_stream;

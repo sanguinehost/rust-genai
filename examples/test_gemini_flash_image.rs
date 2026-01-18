@@ -1,7 +1,10 @@
 //! Test script for the new Gemini 2.5 models
 //! This tests that model routing works correctly for both chat and image generation.
 
-use genai::{Client, chat::{ImagenGenerateImagesRequest, ChatRequest, ChatMessage, ChatOptions}};
+use genai::{
+	Client,
+	chat::{ChatMessage, ChatOptions, ChatRequest, ImagenGenerateImagesRequest},
+};
 
 const MODEL_IMAGEN: &str = "imagen-3.0-generate-002";
 const MODEL_GEMINI_IMAGE: &str = "gemini-2.5-flash-image";
@@ -33,32 +36,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	println!("✓ Imagen generated image: {} bytes", imagen_bytes);
 
 	// Test 2: Use gemini-2.5-flash-image for chat with image generation
-	println!("\n--- Test 2: Use {} for chat-based image generation ---", MODEL_GEMINI_IMAGE);
-	let chat_req = ChatRequest::default()
-		.append_message(ChatMessage::user("Generate an image of a cute robot assistant"));
+	println!(
+		"\n--- Test 2: Use {} for chat-based image generation ---",
+		MODEL_GEMINI_IMAGE
+	);
+	let chat_req =
+		ChatRequest::default().append_message(ChatMessage::user("Generate an image of a cute robot assistant"));
 
-	let chat_options = ChatOptions::default()
-		.with_response_modalities(vec!["IMAGE".to_string()]);
+	let chat_options = ChatOptions::default().with_response_modalities(vec!["IMAGE".to_string()]);
 
 	println!("Attempting chat-based image generation...");
 	let chat_response = client.exec_chat(MODEL_GEMINI_IMAGE, chat_req, Some(&chat_options)).await?;
-	println!("✓ Response from {}: generated {} content parts", MODEL_GEMINI_IMAGE, chat_response.contents.len());
+	println!(
+		"✓ Response from {}: generated {} content parts",
+		MODEL_GEMINI_IMAGE,
+		chat_response.contents.len()
+	);
 
 	// Test 3: Verify gemini-2.5-flash works for chat
 	println!("\n--- Test 3: Test {} for chat ---", MODEL_GEMINI_FLASH);
-	let chat_req = ChatRequest::default()
-		.append_message(ChatMessage::user("Say 'Hello from gemini-2.5-flash!' and nothing else."));
+	let chat_req = ChatRequest::default().append_message(ChatMessage::user(
+		"Say 'Hello from gemini-2.5-flash!' and nothing else.",
+	));
 
 	let chat_response = client.exec_chat(MODEL_GEMINI_FLASH, chat_req, None).await?;
-	println!("✓ Chat response from {}: {:?}", MODEL_GEMINI_FLASH, chat_response.first_content_text_as_str());
+	println!(
+		"✓ Chat response from {}: {:?}",
+		MODEL_GEMINI_FLASH,
+		chat_response.first_content_text_as_str()
+	);
 
 	// Test 4: Verify gemini-2.5-flash-preview-09-2025 works
 	println!("\n--- Test 4: Test {} for chat ---", MODEL_GEMINI_PREVIEW);
-	let chat_req = ChatRequest::default()
-		.append_message(ChatMessage::user("Respond with 'Preview model working!' and nothing else."));
+	let chat_req = ChatRequest::default().append_message(ChatMessage::user(
+		"Respond with 'Preview model working!' and nothing else.",
+	));
 
 	let chat_response = client.exec_chat(MODEL_GEMINI_PREVIEW, chat_req, None).await?;
-	println!("✓ Chat response from {}: {:?}", MODEL_GEMINI_PREVIEW, chat_response.first_content_text_as_str());
+	println!(
+		"✓ Chat response from {}: {:?}",
+		MODEL_GEMINI_PREVIEW,
+		chat_response.first_content_text_as_str()
+	);
 
 	println!("\n--- All tests passed! ---");
 	println!("✓ Model routing works correctly");

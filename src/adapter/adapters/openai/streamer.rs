@@ -102,7 +102,7 @@ impl futures::Stream for OpenAIStreamer {
 							captured_text_content: self.captured_data.content.take(),
 							captured_reasoning_content: self.captured_data.reasoning_content.take(),
 							captured_tool_calls,
-								captured_thought_signature: None,
+							captured_thought_signature: None,
 						};
 
 						return Poll::Ready(Some(Ok(InterStreamEvent::End(inter_stream_end))));

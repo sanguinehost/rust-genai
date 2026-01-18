@@ -10,10 +10,10 @@ mod chat_request;
 mod chat_response;
 mod chat_stream;
 mod content_part;
+mod imagen_types;
 mod message_content;
 mod tool;
 mod usage;
-mod imagen_types;
 mod veo_types;
 
 // -- Flatten
@@ -24,10 +24,10 @@ pub use chat_request::*;
 pub use chat_response::*;
 pub use chat_stream::*;
 pub use content_part::*;
+pub use imagen_types::*;
 pub use message_content::*;
 pub use tool::*;
 pub use usage::*;
-pub use imagen_types::*;
 pub use veo_types::*;
 
 #[doc = "Printing helpers for chat requests and streaming output."]

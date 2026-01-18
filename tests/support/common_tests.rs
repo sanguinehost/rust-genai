@@ -409,11 +409,16 @@ pub async fn common_test_chat_json_format_ok(model: &str) -> TestResult<()> {
 	// Verify format fields exist and have some reasonable structure
 	let event_datetime: String = json_response.x_get("event_datetime")?;
 	assert!(event_datetime.contains("2025"), "Datetime should contain year 2025");
-	assert!(event_datetime.contains("T") || event_datetime.contains(" "), "Datetime should have date-time separator");
+	assert!(
+		event_datetime.contains("T") || event_datetime.contains(" "),
+		"Datetime should have date-time separator"
+	);
 
 	let event_date: String = json_response.x_get("event_date")?;
-	assert!(event_date.contains("2025") && event_date.contains("12") && event_date.contains("15"),
-		"Date should contain 2025-12-15");
+	assert!(
+		event_date.contains("2025") && event_date.contains("12") && event_date.contains("15"),
+		"Date should contain 2025-12-15"
+	);
 
 	let event_time: String = json_response.x_get("event_time")?;
 	assert!(event_time.contains(":"), "Time should contain colons");
@@ -428,7 +433,9 @@ pub async fn common_test_chat_json_array_constraints_ok(model: &str) -> TestResu
 	// -- Setup & Fixtures
 	let client = Client::default();
 	let chat_req = ChatRequest::new(vec![
-		ChatMessage::system("Generate a product review with multiple pros (at least 2, max 5) and a rating between 1-10."),
+		ChatMessage::system(
+			"Generate a product review with multiple pros (at least 2, max 5) and a rating between 1-10.",
+		),
 		ChatMessage::user("Review for a great wireless headphone"),
 	]);
 
@@ -478,12 +485,18 @@ pub async fn common_test_chat_json_array_constraints_ok(model: &str) -> TestResu
 	assert!((1..=10).contains(&rating), "Rating should be 1-10, got: {rating}");
 
 	let pros: Vec<Value> = json_response.x_get("pros")?;
-	assert!(pros.len() >= 2 && pros.len() <= 5,
-		"Pros should have 2-5 items, got: {}", pros.len());
+	assert!(
+		pros.len() >= 2 && pros.len() <= 5,
+		"Pros should have 2-5 items, got: {}",
+		pros.len()
+	);
 
 	let cons: Vec<Value> = json_response.x_get("cons")?;
-	assert!(cons.len() >= 1 && cons.len() <= 3,
-		"Cons should have 1-3 items, got: {}", cons.len());
+	assert!(
+		cons.len() >= 1 && cons.len() <= 3,
+		"Cons should have 1-3 items, got: {}",
+		cons.len()
+	);
 
 	let product_name: String = json_response.x_get("product_name")?;
 	assert!(!product_name.is_empty(), "Product name should not be empty");
